@@ -1,0 +1,73 @@
+name: Manual APK Build
+
+on:
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to build"
+        required: true
+        default: "jothsna-new" # Set your preferred default branch
+
+  # Automatically triggers the workflow on push to the specified branches
+  push:
+    branches:
+      - "main"
+      - "jothsna-new"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Determine Branch to Checkout 🚀
+        id: branch_check
+        run: |
+          # Use the input branch if run manually, otherwise use the branch that triggered the push event
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "BRANCH_REF=${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
+          else
+            echo "BRANCH_REF=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Use the determined branch from the previous step
+          ref: ${{ steps.branch_check.outputs.BRANCH_REF }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        # This step should now succeed, preparing the node_modules
+        run: npm install
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # -----------------------------------------------------------------
+      # THE CRUCIAL FIX IS HERE: chmod +x ./gradlew
+      # -----------------------------------------------------------------
+      - name: Build Debug APK (Fix for gradlew permission)
+        run: |
+          # Move into the android directory
+          cd android
+          
+          # Give execution permission to the Gradle wrapper script (THIS IS THE FIX)
+          chmod +x ./gradlew
+          
+          # Execute the build
+          ./gradlew assembleDebug
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          # Ensure this path is correct relative to the root of the repo (it is correct for React Native)
+          path: android/app/build/outputs/apk/debug/app-debug.apk

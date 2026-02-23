@@ -1,0 +1,24 @@
+import { getShakeDetectionState } from '../../contexts/ShakeDetectionContext';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { EventEmitter } from 'eventemitter3';
+
+// Create event emitter for shake detection
+export const shakeEventEmitter = new EventEmitter();
+
+// Inside your shake detection handler:
+export const handleShakeDetected = async () => {
+    try {
+        const isEnabled = await getShakeDetectionState();
+        
+        if (!isEnabled) {
+            console.log('[ShakeService] Shake detected but toggle is OFF - notifying user');
+            // Emit event to trigger alert in HomeScreen
+            shakeEventEmitter.emit('shakeDetectedButDisabled');
+            return;
+        }
+
+        // ... rest of SMS sending logic ...
+    } catch (err) {
+        console.warn('Error handling shake', err);
+    }
+};

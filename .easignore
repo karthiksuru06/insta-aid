@@ -1,0 +1,45 @@
+# Dependencies
+node_modules
+
+# Git
+.git
+.git_disabled
+.github
+
+# IDE
+.idea
+.vscode
+
+# Expo
+.expo
+
+# Firebase (not needed for build)
+.firebase
+functions
+
+# Build artifacts
+*.map
+*.zip
+dist
+build
+*.keystore
+
+# Logs
+**/*.log
+crash.log
+
+# Hermesc
+Her*mes*
+
+# Native folders (managed workflow - prebuild generates these)
+android/
+ios/
+
+# Documentation
+*.md
+*.txt
+FEATURE_COMPLETE_SUMMARY.txt
+OAUTH_SETUP_INSTRUCTIONS.md
+
+# Misc
+*.orig
