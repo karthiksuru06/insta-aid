@@ -1,12 +1,10 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Accelerometer } from 'expo-sensors';
 import * as Location from 'expo-location';
-import * as SMS from 'expo-sms';
+import { addDoc, collection, doc, getDoc, serverTimestamp } from 'firebase/firestore';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Alert, Platform } from 'react-native';
 import { auth, db } from '../firebaseConfig';
-import { doc, getDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 
 const SHAKE_THRESHOLD = 2.0;
 const ACCELEROMETER_UPDATE_INTERVAL = 300;
@@ -81,94 +79,87 @@ export const ShakeDetectionProvider = ({ children }: { children: React.ReactNode
 		try {
 			const currentUser = auth.currentUser;
 			if (!currentUser) return;
-
 			const contacts = await getEmergencyContacts(currentUser.uid);
-			if (contacts.length === 0) {
-				Alert.alert(t('alerts.noContacts'), t('alerts.addEmergencyContacts'));
-				return;
+			if (contacts.length === 0) return;
+
+			const { status: locStatus } = await Location.getForegroundPermissionsAsync();
+			let locationUrl = "";
+			if (locStatus === 'granted') {
+				const loc = await Location.getCurrentPositionAsync({});
+				locationUrl = ` https://maps.google.com/?q=${loc.coords.latitude},${loc.coords.longitude}`;
 			}
 
-			const { status } = await Location.getForegroundPermissionsAsync();
-			if (status !== 'granted') {
-				Alert.alert(t('alerts.permissionError'), t('alerts.locationPermissionRequired'));
-				return;
+			const message = `🚨 EMERGENCY! I need help!${locationUrl}`;
+
+			const BackgroundShake = require('../modules/background-shake').default;
+			const { PermissionsAndroid, Platform } = require('react-native');
+
+			if (Platform.OS === 'android') {
+				const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.SEND_SMS);
+				if (granted !== PermissionsAndroid.RESULTS.GRANTED) return;
 			}
 
-			const { coords } = await Location.getCurrentPositionAsync({});
-			const locationUrl = `https://maps.google.com/?q=${coords.latitude},${coords.longitude}`;
-			const message = `🚨 EMERGENCY! I need help! My live location: ${locationUrl}`;
-
-			const isAvailable = await SMS.isAvailableAsync();
-			if (isAvailable) {
-				await SMS.sendSMSAsync(contacts, message);
-				Alert.alert(t('alerts.emergencyAlert'), t('alerts.locationShared'));
-				await logAlert('motion_shake', { coords, contacts });
-			} else {
-				Alert.alert(t('alerts.error'), t('alerts.smsNotAvailableOnDevice'));
-			}
-		} catch (err) {
-			console.warn('Emergency SMS error', err);
-			Alert.alert(t('alerts.error'), t('alerts.failedToGetLocationOrSendSMS'));
+			await BackgroundShake.sendSMS(contacts.join(','), message);
+			await logAlert('manual_sos', { contacts, hasLocation: !!locationUrl });
+		} catch (e) {
+			console.warn('Manual silent SMS failed', e);
 		}
 	};
 
-	// Global accelerometer listener
+	// Global accelerometer listener native offloading
 	useEffect(() => {
 		if (Platform.OS === 'web') return;
 
 		(async () => {
-			try {
-				const { status } = await Location.requestForegroundPermissionsAsync();
-				if (status !== 'granted') {
-					// we don't forcibly disable the toggle here, just log
-					console.warn('Location permission not granted for shake detection');
+			if (isShakeDetectionOn) {
+				const currentUser = auth.currentUser;
+				if (!currentUser) return;
+				const contacts = await getEmergencyContacts(currentUser.uid);
+				if (contacts.length === 0) {
+					Alert.alert(t('alerts.noContacts'), t('alerts.addEmergencyContacts'));
+					// revert toggle
+					setIsShakeDetectionOnState(false);
+					return;
 				}
-			} catch (e) {
-				console.warn('request location perm error', e);
+
+				const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
+
+				// Optional: Request Notification permission for Android 13+
+				if (Platform.OS === 'android' && Platform.Version >= 33) {
+					const { PermissionsAndroid } = require('react-native');
+					await PermissionsAndroid.request('android.permission.POST_NOTIFICATIONS');
+				}
+
+				// Optional: Request Background Location if we want the most accurate link in background
+				await Location.requestBackgroundPermissionsAsync();
+
+				// Start Native Background Shake Service
+				try {
+					const BackgroundShake = require('../modules/background-shake').default;
+					BackgroundShake.startService(
+						contacts.join(','),
+						"🚨 EMERGENCY ALERT! I need help!"
+					);
+					console.log('[ShakeDetectionContext] Native background service started');
+				} catch (e) {
+					console.warn('Failed to start BackgroundShake native service.', e);
+				}
+
+			} else {
+				// Stop the service
+				try {
+					const BackgroundShake = require('../modules/background-shake').default;
+					BackgroundShake.stopService();
+				} catch (e) {
+					// Ignore
+				}
 			}
 		})();
 
-		Accelerometer.setUpdateInterval(ACCELEROMETER_UPDATE_INTERVAL);
-
-		const sub = Accelerometer.addListener((data) => {
-			const totalForce = Math.abs(data.x) + Math.abs(data.y) + Math.abs(data.z);
-			if (totalForce > SHAKE_THRESHOLD) {
-				shakeCountRef.current += 1;
-				if (shakeTimeoutRef.current) clearTimeout(shakeTimeoutRef.current);
-
-				shakeTimeoutRef.current = setTimeout(() => {
-					shakeCountRef.current = 0;
-				}, SHAKE_RESET_INTERVAL) as unknown as number;
-
-				if (shakeCountRef.current >= 3) {
-					shakeCountRef.current = 0;
-					if (shakeTimeoutRef.current) {
-						clearTimeout(shakeTimeoutRef.current);
-						shakeTimeoutRef.current = null;
-					}
-
-					// Double-check persisted toggle before sending
-					(async () => {
-						try {
-							const enabled = await AsyncStorage.getItem('shakeDetectionEnabled');
-							if (enabled === 'true') {
-								await sendEmergencySMS();
-							} else {
-								Alert.alert(t('alerts.enableShakeDetection'), t('alerts.shakeAlertModeRequired'));
-							}
-						} catch (e) {
-							console.warn('shake action error', e);
-						}
-					})();
-				}
-			}
-		});
-
 		return () => {
-			sub && sub.remove && sub.remove();
-			if (shakeTimeoutRef.current) clearTimeout(shakeTimeoutRef.current);
+			// Cleanup if needed
 		};
-	}, [t]);
+	}, [isShakeDetectionOn, t]);
 
 	return (
 		<ShakeDetectionContext.Provider value={{ isShakeDetectionOn, setIsShakeDetectionOn }}>

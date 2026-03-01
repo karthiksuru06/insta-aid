@@ -195,14 +195,36 @@ export default function EmergencyContactsScreen() {
             const locationUrl = `https://maps.google.com/?q=${coords.latitude},${coords.longitude}`;
             const message = `🚨 EMERGENCY! I need help! My live location: ${locationUrl}`;
 
-            const isAvailable = await SMS.isAvailableAsync();
-            if (isAvailable) {
-                console.log('[EmergencyContacts] Sending SMS to', contacts.length, 'contacts');
-                await SMS.sendSMSAsync(contacts, message);
-                Alert.alert(t('alerts.emergencyAlert'), t('alerts.locationShared'));
-                await logAlert('emergency_share', { coords, contacts });
-            } else {
-                Alert.alert(t('alerts.error'), t('alerts.smsNotAvailableOnDevice'));
+            try {
+                const BackgroundShake = require('../../modules/background-shake').default;
+                const { PermissionsAndroid } = require('react-native');
+
+                if (Platform.OS === 'android') {
+                    const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.SEND_SMS);
+                    if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+                        Alert.alert(t('alerts.permissionError'), t('alerts.smsPermissionRequired'));
+                        setIsShakeLocked(false);
+                        return;
+                    }
+                }
+
+                const sent = await BackgroundShake.sendSMS(contacts.join(','), message);
+                if (sent) {
+                    Alert.alert(t('alerts.emergencyAlert'), t('alerts.locationShared'));
+                    await logAlert('emergency_share', { coords, contacts });
+                } else {
+                    throw new Error('Native SMS send failed');
+                }
+            } catch (e) {
+                console.warn('[EmergencyContacts] Silent SMS failed, falling back', e);
+                const isAvailable = await SMS.isAvailableAsync();
+                if (isAvailable) {
+                    await SMS.sendSMSAsync(contacts, message);
+                    Alert.alert(t('alerts.emergencyAlert'), t('alerts.locationShared'));
+                    await logAlert('emergency_share', { coords, contacts });
+                } else {
+                    Alert.alert(t('alerts.error'), t('alerts.smsNotAvailableOnDevice'));
+                }
             }
         } catch (err) {
             console.warn('[EmergencyContacts] Send error', err);

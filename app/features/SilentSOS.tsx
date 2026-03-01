@@ -1,23 +1,23 @@
-import React, { useEffect, useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Alert,
-  ScrollView,
-  Platform,
-  ToastAndroid,
-} from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
+import { useRouter } from "expo-router";
 import * as SMS from "expo-sms";
+import React, { useEffect, useState } from "react";
+import {
+  Alert,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  ToastAndroid,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { auth, db } from "../../firebaseConfig";
 import { doc, onSnapshot } from "firebase/firestore";
+import { auth, db } from "../../firebaseConfig";
 import { saveAlert } from "../../services/firebaseServices";
 
 type Contact = {
@@ -94,13 +94,35 @@ export default function SilentSOS() {
     const coordsLink = `https://maps.google.com/?q=${latitude},${longitude}`;
     const message = `EMERGENCY ALERT! I need help! My location: ${coordsLink}`;
 
-    const isAvailable = await SMS.isAvailableAsync();
-    if (isAvailable) {
-      await SMS.sendSMSAsync(contactPhones, message);
-      if (Platform.OS === "android") {
-        ToastAndroid.show("Emergency SMS Sent!", ToastAndroid.SHORT);
+    try {
+      const BackgroundShake = require("../../modules/background-shake").default;
+      const { PermissionsAndroid, Platform: RNPlatform } = require("react-native");
+
+      if (RNPlatform.OS === "android") {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.SEND_SMS
+        );
+        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+          Alert.alert("Permission Error", "SMS permission is required to send silent alerts.");
+          return;
+        }
+      }
+
+      const sent = await BackgroundShake.sendSMS(contactPhones.join(","), message);
+      if (sent) {
+        if (Platform.OS === "android") {
+          ToastAndroid.show("Emergency SMS Sent!", ToastAndroid.SHORT);
+        } else {
+          Alert.alert("Emergency SMS Sent!", "");
+        }
       } else {
-        Alert.alert("Emergency SMS Sent!");
+        throw new Error('Native SMS send failed');
+      }
+    } catch (e) {
+      console.warn("Silent SMS failed, falling back to expo-sms", e);
+      const isAvailable = await SMS.isAvailableAsync();
+      if (isAvailable) {
+        await SMS.sendSMSAsync(contactPhones, message);
       }
     }
   };

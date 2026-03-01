@@ -46,3 +46,6 @@ app-example
 .git_disabled/
 .idea/
 .vscode/
+
+# Build folders inside modules
+**/build/

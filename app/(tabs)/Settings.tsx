@@ -119,31 +119,7 @@ const SettingsScreen = () => {
 
         <Text style={[styles.sectionHeader, { color: theme === "dark" ? "#ccc" : "#666" }]}>{t('helpSupport')}</Text>
 
-        <TouchableOpacity
-          style={[styles.item, { backgroundColor: theme === "dark" ? "#222" : "#fff" }]}
-          onPress={() => router.push("../features/SafetyFeatures")}
-        >
-          <Ionicons
-            name="shield-checkmark-outline"
-            size={22}
-            color="#FF3B30"
-          />
-          <Text style={[styles.itemText, { color: theme === "dark" ? "#fff" : "#000" }]}>{t('safetyFeatures')}</Text>
-          <Ionicons name="chevron-forward" size={20} color="#999" />
-        </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.item, { backgroundColor: theme === "dark" ? "#222" : "#fff" }]}
-          onPress={() => router.push("../AlertsandBackup")}
-        >
-          <Ionicons
-            name="notifications-outline"
-            size={22}
-            color="#FF3B30"
-          />
-          <Text style={[styles.itemText, { color: theme === "dark" ? "#fff" : "#000" }]}>{t('alerts_and_backup')}</Text>
-          <Ionicons name="chevron-forward" size={20} color="#999" />
-        </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.item, { backgroundColor: theme === "dark" ? "#222" : "#fff" }]}

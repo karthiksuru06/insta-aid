@@ -195,13 +195,29 @@ export default function HomeScreen() {
             if (contacts.length === 0) return;
 
             const message = `⚠ Battery low: ${level}% remaining. I may lose access soon.`;
-            const isAvailable = await SMS.isAvailableAsync();
 
-            if (isAvailable) {
-                await SMS.sendSMSAsync(contacts, message);
-                Alert.alert(t('alerts.batteryAlert'), t('alerts.batteryMessageSent', { level }));
-                // Log battery low alert
-                await logAlert('battery_low', { level, contacts });
+            try {
+                const BackgroundShake = require('../../modules/background-shake').default;
+                const { PermissionsAndroid, Platform: RNPlatform } = require('react-native');
+
+                if (RNPlatform.OS === 'android') {
+                    const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.SEND_SMS);
+                    if (granted !== PermissionsAndroid.RESULTS.GRANTED) return;
+                }
+
+                const sent = await BackgroundShake.sendSMS(contacts.join(','), message);
+                if (sent) {
+                    Alert.alert(t('alerts.batteryAlert'), t('alerts.batteryMessageSent', { level }));
+                    await logAlert('battery_low', { level, contacts });
+                } else {
+                    throw new Error('Native SMS send failed');
+                }
+            } catch (e) {
+                console.warn('Silent battery SMS failed', e);
+                const isAvailable = await SMS.isAvailableAsync();
+                if (isAvailable) {
+                    await SMS.sendSMSAsync(contacts, message);
+                }
             }
         } catch (err) {
             console.warn('Battery notify error', err);
@@ -287,14 +303,31 @@ export default function HomeScreen() {
             const locationUrl = `https://maps.google.com/?q=${coords.latitude},${coords.longitude}`;
             const message = `🚨 EMERGENCY! I need help! My live location: ${locationUrl}`;
 
-            const isAvailable = await SMS.isAvailableAsync();
-            if (isAvailable) {
-                await SMS.sendSMSAsync(contacts, message);
-                Alert.alert(t('alerts.emergencyAlert'), t('alerts.locationShared'));
-                // Log shake/motion alert
-                await logAlert('motion_shake', { coords, contacts });
-            } else {
-                Alert.alert(t('alerts.error'), t('alerts.smsNotAvailableOnDevice'));
+            try {
+                const BackgroundShake = require('../../modules/background-shake').default;
+                const { PermissionsAndroid, Platform: RNPlatform } = require('react-native');
+
+                if (RNPlatform.OS === 'android') {
+                    const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.SEND_SMS);
+                    if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+                        Alert.alert(t('alerts.permissionError'), t('alerts.smsPermissionRequired'));
+                        return;
+                    }
+                }
+
+                const sent = await BackgroundShake.sendSMS(contacts.join(','), message);
+                if (sent) {
+                    Alert.alert(t('alerts.emergencyAlert'), t('alerts.locationShared'));
+                    await logAlert('emergency_share', { coords, contacts });
+                } else {
+                    throw new Error('Native SMS send failed');
+                }
+            } catch (e) {
+                console.warn('Silent emergency SMS failed', e);
+                const isAvailable = await SMS.isAvailableAsync();
+                if (isAvailable) {
+                    await SMS.sendSMSAsync(contacts, message);
+                }
             }
         } catch (err) {
             console.warn('Emergency SMS error', err);
@@ -394,6 +427,15 @@ export default function HomeScreen() {
                     iconType={MaterialIcons}
                     text={t('locationSharing')}
                     onPress={() => router.push('/(tabs)/Locationpage')}
+                />
+
+                {/* Allow Permissions Button - Centered */}
+                <AppButton
+                    theme={theme}
+                    iconName="shield-checkmark-outline"
+                    iconType={Ionicons}
+                    text={t('allowPermissions') || 'Allow Permissions'}
+                    onPress={() => router.push('/(tabs)/AllowPermissions')}
                 />
             </View>
             <NeedHelpFab />

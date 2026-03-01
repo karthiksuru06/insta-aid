@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "ShakeToShare",
-    "slug": "ShakeToShare",
+    "name": "Instaaid",
+    "slug": "Instaaid",
     "version": "1.0.0",
     "platforms": [
       "android",
@@ -9,7 +9,7 @@
       "web"
     ],
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/image.png",
     "scheme": "instaaid",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -37,7 +37,7 @@
         }
       },
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "./assets/images/image.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
@@ -67,7 +67,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/icon.png",
+          "image": "./assets/images/image.png",
           "imageWidth": 300,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
@@ -76,7 +76,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/icon.png",
+          "icon": "./assets/images/image.png",
           "color": "#ED4B4B",
           "sounds": [
             "./assets/sounds/alert.mp3"
@@ -86,9 +86,9 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow ShakeToShare to access your location.",
-          "locationAlwaysPermission": "Allow ShakeToShare to access your location at all times.",
-          "locationWhenInUsePermission": "Allow ShakeToShare to access your location while using the app."
+          "locationAlwaysAndWhenInUsePermission": "Allow Instaaid to access your location.",
+          "locationAlwaysPermission": "Allow Instaaid to access your location at all times.",
+          "locationWhenInUsePermission": "Allow Instaaid to access your location while using the app."
         }
       ],
       [

@@ -72,6 +72,8 @@ const BatteryWatcher: React.FC<Props> = ({
               shouldShowAlert: true,
               shouldPlaySound: true,
               shouldSetBadge: false,
+              shouldShowBanner: true,
+              shouldShowList: true,
             }),
           });
         } else {
@@ -107,15 +109,33 @@ const BatteryWatcher: React.FC<Props> = ({
     )}%). Last known location: ${location}`;
 
     try {
-      const isAvailable = await SMS.isAvailableAsync();
-      if (!isAvailable) {
-        Alert.alert("SMS not available", "SMS is not supported on this device.");
-        return;
-      }
+      try {
+        const BackgroundShake = require('../../modules/background-shake').default;
+        const { PermissionsAndroid, Platform } = require('react-native');
 
-      await SMS.sendSMSAsync(contactPhones, message);
-      setSmsSent(true);
-      console.log("Emergency SMS sent to:", contactPhones);
+        if (Platform.OS === 'android') {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.SEND_SMS
+          );
+          if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+            console.warn("SMS permission denied for battery alert");
+            return;
+          }
+        }
+
+        await BackgroundShake.sendSMS(contactPhones.join(','), message);
+        setSmsSent(true);
+        console.log("Silent Emergency SMS sent to:", contactPhones);
+      } catch (e) {
+        console.warn("Silent battery SMS failed, falling back", e);
+        const isAvailable = await SMS.isAvailableAsync();
+        if (isAvailable) {
+          await SMS.sendSMSAsync(contactPhones, message);
+          setSmsSent(true);
+        } else {
+          Alert.alert("SMS not available", "SMS is not supported on this device.");
+        }
+      }
 
       // Log battery low alert to Firestore and notifications
       const user = auth.currentUser;

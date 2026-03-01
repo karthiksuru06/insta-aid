@@ -60,12 +60,31 @@ export default function HomeScreen() {
     try {
       const { coords } = await Location.getCurrentPositionAsync({});
       const message = `I need help! My location: https://maps.google.com/?q=${coords.latitude},${coords.longitude}`;
-      const isAvailable = await SMS.isAvailableAsync();
-      if (isAvailable) {
-        await SMS.sendSMSAsync(contacts, message);
+      try {
+        const BackgroundShake = require('../../modules/background-shake').default;
+        const { PermissionsAndroid, Platform: RNPlatform } = require('react-native');
+
+        if (RNPlatform.OS === 'android') {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.SEND_SMS
+          );
+          if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+            Alert.alert("Permission denied", "SMS permission is required.");
+            return;
+          }
+        }
+
+        await BackgroundShake.sendSMS(contacts.join(','), message);
         Alert.alert("Message sent", "Your location has been shared.");
-      } else {
-        Alert.alert("Error", "SMS service not available.");
+      } catch (e) {
+        console.warn("Silent SMS failed, falling back", e);
+        const isAvailable = await SMS.isAvailableAsync();
+        if (isAvailable) {
+          await SMS.sendSMSAsync(contacts, message);
+          Alert.alert("Message sent", "Your location has been shared.");
+        } else {
+          Alert.alert("Error", "SMS service not available.");
+        }
       }
     } catch (err) {
       Alert.alert("Error", "Failed to get location or send SMS.");

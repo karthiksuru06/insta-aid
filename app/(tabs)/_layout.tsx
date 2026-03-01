@@ -143,21 +143,7 @@ export default function Layout() {
         {/* Shake service initialized on mount (no visual element) */}
         <GlobalBatteryWatcher />
 
-        {/* Divider above nav bar — only on main tab pages */}
-        {showNavBar && (
-          <View
-            style={[
-              {
-                height: 1,
-                backgroundColor: theme === "dark" ? "#333" : '#e0e0e0',
-                position: 'absolute',
-                left: 0,
-                right: 0,
-                bottom: navBarHeight,
-              },
-            ]}
-          />
-        )}
+
 
         {/* Show nav bar only on main tab pages */}
         {showNavBar && (

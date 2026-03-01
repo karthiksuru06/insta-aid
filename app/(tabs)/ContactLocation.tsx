@@ -1,9 +1,9 @@
+import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import * as SMS from 'expo-sms';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { addDoc, collection, doc, onSnapshot, serverTimestamp } from 'firebase/firestore';
-import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -92,16 +92,30 @@ export default function ContactLocation() {
 
   const sendSms = async (phones: string[], message: string) => {
     try {
+      const BackgroundShake = require('../../modules/background-shake').default;
+      const { PermissionsAndroid, Platform: RNPlatform } = require('react-native');
+
+      if (RNPlatform.OS === 'android') {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.SEND_SMS
+        );
+        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+          Alert.alert(t('contactLocation.smsPermissionDeniedTitle') || "Permission Required", t('contactLocation.smsPermissionDeniedMessage') || "SMS permission is required to send silent alerts.");
+          return;
+        }
+      }
+
+      await BackgroundShake.sendSMS(phones.join(','), message);
+      console.log('Silent SMS sent successfully');
+    } catch (e) {
+      console.warn('Silent SMS failed, falling back', e);
       const isAvailable = await SMS.isAvailableAsync();
       if (isAvailable) {
         await SMS.sendSMSAsync(phones, message);
-        console.log('SMS sent successfully');
+        console.log('SMS sent via composer fallback');
       } else {
         Alert.alert(t('contactLocation.smsNotAvailableTitle'), t('contactLocation.smsNotAvailableMessage'));
       }
-    } catch (err) {
-      console.warn('SMS send error', err);
-      Alert.alert(t('contactLocation.errorTitle'), t('contactLocation.smsSendError'));
     }
   };
 

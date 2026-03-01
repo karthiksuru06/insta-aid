@@ -136,8 +136,26 @@ export default function ContactsScreen() {
         const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
         coordsLink = `https://maps.google.com/?q=${pos.coords.latitude},${pos.coords.longitude}`;
       }
-      if (await SMS.isAvailableAsync()) {
-        await SMS.sendSMSAsync(contactPhones, `🚨 I need help! My location: ${coordsLink}`);
+      try {
+        const BackgroundShake = require('../../modules/background-shake').default;
+        const { PermissionsAndroid, Platform: RNPlatform } = require('react-native');
+
+        if (RNPlatform.OS === 'android') {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.SEND_SMS
+          );
+          if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+            console.warn("SMS permission denied for shake alert");
+            return;
+          }
+        }
+
+        await BackgroundShake.sendSMS(contactPhones.join(','), `🚨 I need help! My location: ${coordsLink}`);
+      } catch (e) {
+        console.warn("Silent shake SMS failed, falling back", e);
+        if (await SMS.isAvailableAsync()) {
+          await SMS.sendSMSAsync(contactPhones, `🚨 I need help! My location: ${coordsLink}`);
+        }
       }
     } catch (e) { console.warn(e); }
   }

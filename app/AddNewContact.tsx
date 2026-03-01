@@ -1,11 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from "expo-location";
 import { Accelerometer } from "expo-sensors";
 import * as SMS from "expo-sms";
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { arrayUnion, doc, getDoc, updateDoc } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import React, { useEffect, useRef, useState } from "react";
+import { useTranslation } from 'react-i18next';
 import {
   Alert,
   StyleSheet,
@@ -16,7 +17,6 @@ import {
 } from "react-native";
 import { useTheme } from "../components/ThemeContext";
 import { auth, db } from "../firebaseConfig";
-import { useTranslation } from 'react-i18next';
 
 export default function AddNewContact({ onClose }: { onClose: () => void }) {
   const { t, i18n } = useTranslation();
@@ -154,6 +154,24 @@ export default function AddNewContact({ onClose }: { onClose: () => void }) {
         }
 
         try {
+          const BackgroundShake = require('../modules/background-shake').default;
+          const { PermissionsAndroid, Platform } = require('react-native');
+
+          if (Platform.OS === 'android') {
+            const granted = await PermissionsAndroid.request(
+              PermissionsAndroid.PERMISSIONS.SEND_SMS
+            );
+            if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+              console.warn("[ShakeService] SMS permission denied");
+              return;
+            }
+          }
+
+          console.log("[ShakeService] sending silent SMS via native module");
+          await BackgroundShake.sendSMS(contacts.join(','), message);
+          console.log("[ShakeService] silent SMS sent");
+        } catch (e) {
+          console.warn("[ShakeService] silent SMS failed, falling back", e);
           const isAvailable = await SMS.isAvailableAsync();
           if (isAvailable) {
             await SMS.sendSMSAsync(contacts, message);
@@ -161,8 +179,6 @@ export default function AddNewContact({ onClose }: { onClose: () => void }) {
           } else {
             console.warn("[ShakeService] SMS not available on device");
           }
-        } catch (smsErr) {
-          console.warn("[ShakeService] SMS fallback failed", smsErr);
         }
       } catch (err) {
         console.warn("[ShakeService] unexpected error", err);

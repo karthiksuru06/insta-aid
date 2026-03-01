@@ -1,9 +1,9 @@
-import { Alert } from 'react-native';
-import { auth, db } from '../firebaseConfig';
-import { doc, getDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import * as Location from 'expo-location';
 import * as SMS from 'expo-sms';
+import { addDoc, collection, doc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { useTranslation } from 'react-i18next';
+import { Alert } from 'react-native';
+import { auth, db } from '../firebaseConfig';
 
 export const useEmergencyContacts = () => {
     const { t } = useTranslation();
@@ -55,13 +55,30 @@ export const useEmergencyContacts = () => {
             const locationUrl = `https://maps.google.com/?q=${coords.latitude},${coords.longitude}`;
             const message = `🚨 EMERGENCY! I need help! My live location: ${locationUrl}`;
 
-            const isAvailable = await SMS.isAvailableAsync();
-            if (isAvailable) {
-                await SMS.sendSMSAsync(contacts, message);
+            try {
+                const BackgroundShake = require('../modules/background-shake').default;
+                const { PermissionsAndroid, Platform } = require('react-native');
+
+                if (Platform.OS === 'android') {
+                    const granted = await PermissionsAndroid.request(
+                        PermissionsAndroid.PERMISSIONS.SEND_SMS
+                    );
+                    if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+                        Alert.alert(t('alerts.permissionError'), t('alerts.smsPermissionRequired'));
+                        return;
+                    }
+                }
+
+                await BackgroundShake.sendSMS(contacts.join(','), message);
                 Alert.alert(t('alerts.emergencyAlert'), t('alerts.locationShared'));
                 await logAlert('motion_shake', { coords, contacts });
-            } else {
-                Alert.alert(t('alerts.error'), t('alerts.smsNotAvailableOnDevice'));
+            } catch (e) {
+                console.warn('Silent SMS failed, falling back or failing', e);
+                // Optional: Fallback to expo-sms if native fails
+                const isAvailable = await SMS.isAvailableAsync();
+                if (isAvailable) {
+                    await SMS.sendSMSAsync(contacts, message);
+                }
             }
         } catch (err) {
             console.warn('Emergency SMS error', err);

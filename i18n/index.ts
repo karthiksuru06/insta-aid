@@ -6,6 +6,7 @@ import { initReactI18next } from 'react-i18next';
 const resources: Record<string, { translation: Record<string, any> }> = {
   'en-US': {
     translation: {
+      allowPermissions: 'Allow Permissions',
       selectLanguage: 'Select Your Language',
       change: 'Change',
       settings: 'Settings',
@@ -517,6 +518,7 @@ const resources: Record<string, { translation: Record<string, any> }> = {
 
   kn: {
     translation: {
+      allowPermissions: 'ಅನುಮತಿಗಳನ್ನು ನೀಡಿ',
       // General
       selectLanguage: 'ನಿಮ್ಮ ಭಾಷೆಯನ್ನು ಆಯ್ಕೆಮಾಡಿ',
       change: 'ಬದಲಾಯಿಸಿ',
@@ -793,6 +795,7 @@ const resources: Record<string, { translation: Record<string, any> }> = {
 
   te: {
     translation: {
+      allowPermissions: 'అనుమతులను ఇవ్వండి',
       selectLanguage: 'మీ భాషను ఎంచుకోండి',
       change: 'మార్చండి',
       settings: 'సెట్టింగులు',
@@ -1066,6 +1069,7 @@ const resources: Record<string, { translation: Record<string, any> }> = {
 
   'en-UK': {
     translation: {
+      allowPermissions: 'Allow Permissions',
       selectLanguage: 'Select Your Language',
       change: 'Change',
       settings: 'Settings',
@@ -1349,6 +1353,7 @@ const resources: Record<string, { translation: Record<string, any> }> = {
   },
   hi: {
     translation: {
+      allowPermissions: 'अनुमतियां दें',
       selectLanguage: 'अपनी भाषा चुनें',
       change: 'बदलें',
       settings: 'सेटिंग्स',
@@ -1678,6 +1683,7 @@ const resources: Record<string, { translation: Record<string, any> }> = {
 
   mr: {
     translation: {
+      allowPermissions: 'परवानग्या द्या',
       selectLanguage: 'आपली भाषा निवडा',
       change: 'बदल करा',
       settings: 'सेटिंग्ज',
@@ -2009,6 +2015,7 @@ const resources: Record<string, { translation: Record<string, any> }> = {
   },
   gu: {
     translation: {
+      allowPermissions: 'પરવાનગીઓ આપો',
       selectLanguage: 'તમારી ભાષા પસંદ કરો',
       change: 'બદલો',
       settings: 'સેટિંગ્સ',
@@ -2277,6 +2284,7 @@ const resources: Record<string, { translation: Record<string, any> }> = {
 
   ta: {
     translation: {
+      allowPermissions: 'அனுமதிகளை வழங்கு',
       selectLanguage: 'உங்கள் மொழியைத் தேர்ந்தெடுக்கவும்',
       change: 'மாற்றவும்',
       settings: 'அமைப்புகள்',
@@ -2546,6 +2554,7 @@ const resources: Record<string, { translation: Record<string, any> }> = {
 
   bn: {
     translation: {
+      allowPermissions: 'অনুমতি দিন',
       selectLanguage: 'আপনি ভাষা নির্বাচন করুন',
       change: 'পরিবর্তন করুন',
       settings: 'সেটিংস',
@@ -2815,6 +2824,7 @@ const resources: Record<string, { translation: Record<string, any> }> = {
 
   ml: {
     translation: {
+      allowPermissions: 'അനുമതികൾ നൽകുക',
       selectLanguage: 'നിങ്ങളുടെ ഭാഷ തിരഞ്ഞെടുക്കുക',
       change: 'മാറ്റുക',
       settings: 'സെറ്റിംഗ്സ്',

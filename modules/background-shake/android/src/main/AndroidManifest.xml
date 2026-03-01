@@ -1,0 +1,12 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="expo.modules.backgroundshake">
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+  <uses-permission android:name="android.permission.SEND_SMS" />
+  <application>
+    <service
+        android:name=".ShakeService"
+        android:foregroundServiceType="specialUse"
+        android:exported="false" />
+  </application>
+</manifest>
