@@ -8,7 +8,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { initShakeService } from '../(lib)/ShakeService';
 import { useTheme } from '../../components/ThemeContext';
-import { AuthProvider } from '../../src/Contexts/AuthContexts';
+import { AuthProvider, useAuth } from '../../src/Contexts/AuthContexts';
+import { updateUserHeartbeat } from '../../services/firebaseServices';
 import BatteryWatcher from './BatteryWatcher';
 
 function NavIcon({
@@ -90,6 +91,26 @@ function GlobalBatteryWatcher() {
   );
 }
 
+function UserHeartbeat() {
+  const { user } = useAuth();
+
+  React.useEffect(() => {
+    if (!user) return;
+
+    // Initial heartbeat
+    updateUserHeartbeat(user.uid).catch(e => console.warn('Initial heartbeat failed', e));
+
+    // Set up interval for periodic heartbeats (every 2 minutes)
+    const intervalId = setInterval(() => {
+      updateUserHeartbeat(user.uid).catch(e => console.warn('Periodic heartbeat failed', e));
+    }, 2 * 60 * 1000);
+
+    return () => clearInterval(intervalId);
+  }, [user]);
+
+  return null;
+}
+
 export default function Layout() {
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
@@ -101,7 +122,7 @@ export default function Layout() {
     .toLowerCase()
     .replace(/\/+$/, '');
 
-  console.log('� [LAYOUT] Current path:', pathname, 'Normalized:', normalizedPath);
+  console.log('📍 [LAYOUT] Current path:', pathname, 'Normalized:', normalizedPath);
 
   const isAdminPage = normalizedPath.startsWith('/admin');
 
@@ -142,8 +163,7 @@ export default function Layout() {
         </View>
         {/* Shake service initialized on mount (no visual element) */}
         <GlobalBatteryWatcher />
-
-
+        <UserHeartbeat />
 
         {/* Show nav bar only on main tab pages */}
         {showNavBar && (

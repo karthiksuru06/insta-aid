@@ -61,8 +61,15 @@ export const sendEmergencySMSFromBackground = async () => {
         const message = `🚨 EMERGENCY! I need help! My live location: ${locationUrl}`;
 
         try {
-            const BackgroundShake = require('../../modules/background-shake').default;
+            // CRITICAL: Safe require with null check
+            const mod = require('../../modules/background-shake');
+            const BackgroundShake = mod?.default;
             const { PermissionsAndroid, Platform } = require('react-native');
+
+            if (!BackgroundShake || typeof BackgroundShake.sendSMS !== 'function') {
+                console.warn('[ShakeService] Native module unavailable. Falling back to Expo SMS.');
+                throw new Error('Native module unavailable');
+            }
 
             if (Platform.OS === 'android') {
                 const granted = await PermissionsAndroid.request(
@@ -77,7 +84,7 @@ export const sendEmergencySMSFromBackground = async () => {
             await BackgroundShake.sendSMS(contacts.join(','), message);
             await logAlert('motion_shake', { latitude, longitude, contacts });
         } catch (e) {
-            console.warn('[ShakeService] Silent SMS failed, falling back', e);
+            console.warn('[ShakeService] Silent SMS failed, falling back to Expo SMS', e);
             const isAvailable = await SMS.isAvailableAsync();
             if (isAvailable) {
                 await SMS.sendSMSAsync(contacts, message);
@@ -93,10 +100,10 @@ export const sendEmergencySMSFromBackground = async () => {
 export const initShakeService = async () => {
     try {
         const { status } = await Location.requestForegroundPermissionsAsync();
-        console.log('[ShakeService] Initialized');
+        console.log('[ShakeService] Initialized with status:', status);
     } catch (err) {
         console.warn('[ShakeService] Init error', err);
     }
 };
 
-initShakeService();
+// SAFE: No top-level execution. Called explicitly in app/(tabs)/_layout.tsx

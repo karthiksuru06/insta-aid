@@ -18,6 +18,7 @@ interface AuthContextType {
   user: User | null;
   profile: Record<string, any> | null;
   loading: boolean;
+  isAdmin: boolean;
   register: (email: string, password: string) => Promise<UserCredential>;
   login: (email: string, password: string) => Promise<UserCredential>;
   logout: () => Promise<void>;
@@ -30,6 +31,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Record<string, any> | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -40,18 +42,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const snap = await getDoc(docRef);
 
         if (snap.exists()) {
-          setProfile(snap.data());
+          const data = snap.data();
+          setProfile(data);
+          // Check if user has admin role or is the superadmin email
+          const isSuperAdmin = data.email === "instaaid08@gmail.com";
+          setIsAdmin(data.role === "admin" || data.role === "superadmin" || isSuperAdmin);
         } else {
           const defaultProfile = {
             uid: firebaseUser.uid,
             email: firebaseUser.email,
+            role: "user",
             createdAt: new Date(),
           };
           await setDoc(docRef, defaultProfile);
           setProfile(defaultProfile);
+          setIsAdmin(false);
         }
       } else {
         setProfile(null);
+        setIsAdmin(false);
       }
 
       setLoading(false);
@@ -92,7 +101,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <AuthContext.Provider
-      value={{ user, profile, loading, register, login, logout, changePassword }}
+      value={{ user, profile, loading, isAdmin, register, login, logout, changePassword }}
     >
       {children}
     </AuthContext.Provider>

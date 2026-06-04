@@ -35,7 +35,7 @@ function NotificationListener() {
 
           // Ignore stale notifications - only handle if callStartTime is within last 2 minutes
           const callStartTime = data?.callStartTime;
-          if (callStartTime) {
+          if (callStartTime && typeof callStartTime === 'string') {
             const age = Date.now() - new Date(callStartTime).getTime();
             if (age > 2 * 60 * 1000) {
               console.log('[FAKE CALL] Ignoring stale notification (age:', Math.round(age / 1000), 'seconds)');

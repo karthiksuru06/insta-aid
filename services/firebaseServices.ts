@@ -193,16 +193,29 @@ export const logUserActivity = async (userId: string, activity: string) => {
   }
 };
 
-// Update user status
+// Update user status and last seen (heartbeat)
 export const updateUserStatus = async (userId: string, status: string) => {
   try {
     await updateDoc(doc(db, "users", userId), {
       status,
+      lastSeen: Timestamp.now(),
       lastStatusUpdate: Timestamp.now(),
     });
   } catch (error) {
     console.error("Error updating user status:", error);
     throw error;
+  }
+};
+
+// Heartbeat to keep user marked as active
+export const updateUserHeartbeat = async (userId: string) => {
+  try {
+    await updateDoc(doc(db, "users", userId), {
+      status: "Active",
+      lastSeen: Timestamp.now(),
+    });
+  } catch (error) {
+    console.error("Error updating user heartbeat:", error);
   }
 };
 
@@ -335,6 +348,7 @@ export default {
   postAnnouncement,
   logUserActivity,
   updateUserStatus,
+  updateUserHeartbeat,
   assignFeedback,
   fetchFeedbacks,
   resolveFeedback,

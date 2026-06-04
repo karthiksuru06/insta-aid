@@ -17,6 +17,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from "react-native-webview";
 import AdminProfileModal from "../../components/AdminProfileModal";
+import { withAdminGuard } from "../../components/withAdminGuard";
 import { auth } from "../../firebaseConfig";
 import {
   addUser as addUserService,
@@ -38,7 +39,7 @@ interface User {
   emergencyContacts?: { name: string; phone: string }[];
 }
 
-export default function UserManagementScreen() {
+function UserManagementScreen() {
   const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
@@ -829,3 +830,5 @@ const styles = StyleSheet.create({
     gap: 12,
   },
 });
+
+export default withAdminGuard(UserManagementScreen);

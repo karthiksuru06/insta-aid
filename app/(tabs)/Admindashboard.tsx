@@ -6,7 +6,6 @@ import {
   limit,
   orderBy,
   query,
-  where,
 } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import {
@@ -21,6 +20,7 @@ import {
 } from "react-native";
 import AdminProfileModal from "../../components/AdminProfileModal";
 import AdminAnnouncementModal from "../../components/AdminAnnouncementModal";
+import { withAdminGuard } from "../../components/withAdminGuard";
 import { auth, db } from "../../firebaseConfig";
 
 const screenWidth = Dimensions.get("window").width;
@@ -40,7 +40,7 @@ interface Metrics {
   feedback: number;
 }
 
-export default function DashboardScreen() {
+function DashboardScreen() {
   const router = useRouter();
 
   const [totalUsers, setTotalUsers] = useState(0);
@@ -122,14 +122,29 @@ export default function DashboardScreen() {
   const fetchDashboardData = async () => {
     try {
       /* 1. Fetch Stats */
-      const [usersSnap, activeSnap, feedbackSnap] = await Promise.all([
+      const [usersSnap, feedbackSnap] = await Promise.all([
         getDocs(collection(db, "users")),
-        getDocs(query(collection(db, "users"), where("status", "==", "Active"))),
         getDocs(collection(db, "contactSubmissions")),
       ]);
 
+      // Calculate active users based on lastSeen (within last 5 minutes)
+      const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+      let activeCount = 0;
+      usersSnap.forEach((doc) => {
+        const data = doc.data();
+        if (data.lastSeen && data.lastSeen.toDate) {
+          const lastSeenMs = data.lastSeen.toDate().getTime();
+          if (lastSeenMs > fiveMinutesAgo) {
+            activeCount++;
+          }
+        } else if (data.status === "Active") {
+          // Fallback for older records without lastSeen
+          activeCount++;
+        }
+      });
+
       setTotalUsers(usersSnap.size);
-      setActiveUsers(activeSnap.size);
+      setActiveUsers(activeCount);
       setFeedbackCount(feedbackSnap.size);
 
       setMetrics({
@@ -516,3 +531,5 @@ const styles = StyleSheet.create({
   activityTime: { fontSize: 11, color: "#9CA3AF" },
   locationText: { fontSize: 11, color: "#666", marginTop: 2 },
 });
+
+export default withAdminGuard(DashboardScreen);

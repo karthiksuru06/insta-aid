@@ -104,14 +104,15 @@
         }
       ],
       "expo-dev-client",
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      "expo-font",
+      "expo-web-browser"
     ],
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "305722a2-d13d-4ac7-b9bd-d7f8b5972e4f"
+        "projectId": "9237c496-ac25-4259-95f1-a46aab754636"
       }
-    },
-    "owner": "kancha"
+    }
   }
 }

@@ -113,7 +113,7 @@ export async function showIncomingCallNotification(
             channelId: INCOMING_CALL_CHANNEL.id,
             priority: Notifications.AndroidNotificationPriority.MAX,
             vibrate: INCOMING_CALL_CHANNEL.vibrationPattern,
-            category: Notifications.AndroidNotificationCategory.CALL,
+            category: 'call',
             actions: [
               {
                 identifier: 'decline',
@@ -265,7 +265,7 @@ export async function requestFakeCallNotificationPermissions(): Promise<boolean>
           allowAlert: true,
           allowBadge: false,
           allowSound: true,
-          allowAnnouncements: true,
+          
           allowCriticalAlerts: true, // For realistic call notifications on iOS
         },
       });

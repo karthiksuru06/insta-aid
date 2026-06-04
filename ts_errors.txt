@@ -1,0 +1,13 @@
+app/(lib)/authUtils.ts(5,33): error TS2307: Cannot find module 'firebase/auth/react-native' or its corresponding type declarations.
+app/(tabs)/SilentSOS.tsx(145,21): error TS2554: Expected 2 arguments, but got 1.
+app/(tabs)/SilentSOS.tsx(193,21): error TS2554: Expected 2 arguments, but got 1.
+app/auth/SplashScreen.tsx(67,32): error TS2339: Property 'email' does not exist on type 'never'.
+app/auth/SplashScreen.tsx(67,46): error TS2339: Property 'uid' does not exist on type 'never'.
+app/features/SilentSOS.tsx(147,21): error TS2554: Expected 2 arguments, but got 1.
+app/features/SilentSOS.tsx(195,21): error TS2554: Expected 2 arguments, but got 1.
+components/ErrorBoundary.tsx(37,23): error TS2339: Property 'children' does not exist on type 'Readonly<{}>'.
+functions/src/index.ts(1,28): error TS2307: Cannot find module 'firebase-functions' or its corresponding type declarations.
+functions/src/index.ts(20,64): error TS7006: Parameter 'data' implicitly has an 'any' type.
+functions/src/index.ts(20,70): error TS7006: Parameter 'context' implicitly has an 'any' type.
+functions/src/index.ts(99,63): error TS7006: Parameter 'data' implicitly has an 'any' type.
+functions/src/index.ts(99,69): error TS7006: Parameter 'context' implicitly has an 'any' type.

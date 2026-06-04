@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import AdminProfileModal from "../../components/AdminProfileModal";
 import { auth } from "../../firebaseConfig";
+import { withAdminGuard } from "../../components/withAdminGuard";
 import {
   assignFeedback,
   fetchFeedbacks,
@@ -47,7 +48,7 @@ const getTimeAgo = (timestamp: any) => {
   }
 };
 
-export default function App() {
+function App() {
   const [feedbacks, setFeedbacks] = useState<FeedbackItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [profileModalVisible, setProfileModalVisible] = useState(false);
@@ -380,3 +381,5 @@ const styles = StyleSheet.create({
     borderColor: "#EF4444",
   },
 });
+
+export default withAdminGuard(App);

@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import AdminProfileModal from "../../components/AdminProfileModal";
 import { auth } from "../../firebaseConfig";
+import { withAdminGuard } from "../../components/withAdminGuard";
 import {
   fetchAlertHistory,
   fetchLiveAlerts,
@@ -91,7 +92,7 @@ const renderIcon = (alert: any) => {
 
 /* ================= COMPONENT ================= */
 
-export default function AdminAlertsManagement() {
+function AdminAlertsManagement() {
   const router = useRouter();
   const params = useLocalSearchParams();
 
@@ -606,3 +607,5 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
 });
+
+export default withAdminGuard(AdminAlertsManagement);

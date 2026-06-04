@@ -21,6 +21,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AdminProfileModal from "../../components/AdminProfileModal";
 import { auth, db } from "../../firebaseConfig";
+import { withAdminGuard } from "../../components/withAdminGuard";
 
 /* ================= TYPES ================= */
 
@@ -49,7 +50,7 @@ const categories = Object.keys(CATEGORY_ICON_MAP);
 
 /* ================= COMPONENT ================= */
 
-export default function EmergencyScreen() {
+function EmergencyScreen() {
   const [items, setItems] = useState<EmergencyItem[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [profileModalVisible, setProfileModalVisible] = useState(false);
@@ -562,3 +563,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 });
+
+export default withAdminGuard(EmergencyScreen);

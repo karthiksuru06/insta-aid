@@ -3,8 +3,9 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // ✅ Check if user is admin
     function isAdmin() {
-      return get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'admin' ||
-             request.auth.token.email == 'instaaid08@gmail.com';
+      return request.auth.token.admin == true ||
+             request.auth.token.email == 'instaaid08@gmail.com' ||
+             get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'admin';
     }
 
     // ✅ Users collection - authenticated users can read/write their own doc
@@ -13,7 +14,6 @@ service cloud.firestore {
       allow create: if request.auth.uid == uid;
       allow update: if request.auth.uid == uid || isAdmin();
       allow delete: if request.auth.uid == uid || isAdmin();
-      allow write: if request.auth.uid == uid || isAdmin();
     }
 
     // ✅ Admins collection - only admins can read/write
@@ -21,24 +21,30 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
-    // ✅ Alerts collection - authenticated users can read/write
-    match /alerts/{document=**} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
-      allow create: if request.auth != null;
+    // ✅ Alerts collection - users can only read/write their own alerts; admins can read all
+    match /alerts/{alertId} {
+      allow read: if request.auth != null && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid || isAdmin();
     }
 
-    // ✅ Contact submissions - authenticated users can create and read their own
-    match /contactSubmissions/{document=**} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
-      allow create: if request.auth != null;
+    // ✅ Contact submissions - users can only read/write their own; admins can read all
+    match /contactSubmissions/{submissionId} {
+      allow read: if request.auth != null && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid || isAdmin();
     }
 
-    // ✅ Announcements - authenticated users can read
+    // ✅ Announcements - authenticated users can read, only admins can write
     match /announcements/{document=**} {
       allow read: if request.auth != null;
       allow write: if isAdmin();
+    }
+
+    // ✅ Activities collection - users can read their own, admins can read all
+    match /activities/{activityId} {
+      allow read: if request.auth != null && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
     }
 
     // ✅ Catch-all for other collections - deny by default to prevent leaks
@@ -47,4 +53,3 @@ service cloud.firestore {
     }
   }
 }
-

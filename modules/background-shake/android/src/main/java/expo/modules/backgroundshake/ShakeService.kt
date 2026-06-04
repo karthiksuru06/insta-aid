@@ -5,11 +5,11 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.location.LocationManager
 import android.os.Build
 import android.os.IBinder
 import android.telephony.SmsManager
@@ -21,47 +21,34 @@ class ShakeService : Service(), SensorEventListener {
     private lateinit var sensorManager: SensorManager
     private var accelerometer: Sensor? = null
     
+    private var lastUpdate: Long = 0
+    private var last_x = 0f
+    private var last_y = 0f
+    private var last_z = 0f
     private var shakeCount = 0
     private var lastShakeTime: Long = 0
-    private val SHAKE_THRESHOLD = 2.0f * SensorManager.GRAVITY_EARTH // Equivalent to 2.0 G total force in react native
-    private val SHAKE_RESET_INTERVAL = 5000L
-    private val MIN_SHAKE_COUNT = 3
+    private val SHAKE_THRESHOLD = 800f // Speed threshold to filter out normal bumps
+    private val SHAKE_WINDOW = 2500L // 2.5 seconds to complete the shakes
+    private val MIN_SHAKE_COUNT = 4
 
     override fun onCreate() {
         super.onCreate()
+        createNotificationChannel()
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        
+        val notification = NotificationCompat.Builder(this, "shake_service_channel")
+            .setContentTitle("Instaaid Emergency Monitor")
+            .setContentText("Shake detection is active in the background.")
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+            
+        startForeground(1, notification)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d("ShakeService", "Service starting...")
-        createNotificationChannel()
-        val notification = NotificationCompat.Builder(this, "shake_service_channel")
-            .setContentTitle("InstaAid Protection Active")
-            .setContentText("Monitoring for emergency shakes in the background.")
-            .setSmallIcon(resources.getIdentifier("ic_launcher", "mipmap", packageName))
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setOngoing(true)
-            .build()
-        
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                startForeground(1, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-            } else {
-                startForeground(1, notification)
-            }
-            Log.d("ShakeService", "Service started as foreground")
-        } catch (e: Exception) {
-            Log.e("ShakeService", "Could not start foreground service", e)
-        }
- 
-        // Register Sensor with a higher frequency for better background detection
-        accelerometer?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI)
-            Log.d("ShakeService", "Accelerometer listener registered")
-        }
- 
+        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
         return START_STICKY
     }
 
@@ -70,32 +57,46 @@ class ShakeService : Service(), SensorEventListener {
         sensorManager.unregisterListener(this)
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
-
     override fun onSensorChanged(event: SensorEvent?) {
         if (event?.sensor?.type == Sensor.TYPE_ACCELEROMETER) {
-            val x = event.values[0]
-            val y = event.values[1]
-            val z = event.values[2]
+            val curTime = System.currentTimeMillis()
+            // Sample every 100ms
+            if ((curTime - lastUpdate) > 100) {
+                val diffTime = (curTime - lastUpdate)
+                lastUpdate = curTime
 
-            // same threshold logic as React Native totalForce > 2.0 (g? no, their logic was Math.abs(x)+y+z. Wait, Standard Android accel values are in m/s^2, meaning resting is 9.8 (1G). They had threshold "2.0". Wait, expo-sensors normalize accel to Gs! Native Android returns m/s^2.
-            // React Native expo-sensors: values are in G's (1G = 9.81m/s2).
-            // Their check: totalForce = abs(x) + abs(y) + abs(z) > 2.0 (G's)
-            // So native: abs(x/9.81) + abs(y/9.81) + abs(z/9.81) > 2.0
-            val forceInG = (abs(x) + abs(y) + abs(z)) / SensorManager.GRAVITY_EARTH
+                val x = event.values[0]
+                val y = event.values[1]
+                val z = event.values[2]
 
-            if (forceInG > 2.0f) {
-                val now = System.currentTimeMillis()
-                if (now - lastShakeTime > SHAKE_RESET_INTERVAL) {
-                    shakeCount = 0
+                // Calculate speed of change (jerk) to eliminate constant forces like gravity or car acceleration
+                val speed = abs(x + y + z - last_x - last_y - last_z) / diffTime * 10000
+
+                if (speed > SHAKE_THRESHOLD) {
+                    val now = System.currentTimeMillis()
+                    
+                    // Reset if the shake sequence took too long
+                    if (now - lastShakeTime > SHAKE_WINDOW) {
+                        shakeCount = 0
+                    }
+                    
+                    shakeCount++
+                    lastShakeTime = now
+                    Log.d("ShakeService", "Shake detected! Count: $shakeCount, Speed: $speed")
+
+                    if (shakeCount >= MIN_SHAKE_COUNT) {
+                        Log.i("ShakeService", "Emergency Shake Sequence Confirmed!")
+                        shakeCount = 0
+                        
+                        // Emit event to React Native for UI confirmation if app is open
+                        // For now, proceed to send SMS (Background fallback)
+                        sendEmergencySms()
+                    }
                 }
-                shakeCount++
-                lastShakeTime = now
-
-                if (shakeCount >= MIN_SHAKE_COUNT) {
-                    shakeCount = 0
-                    sendEmergencySms()
-                }
+                
+                last_x = x
+                last_y = y
+                last_z = z
             }
         }
     }
@@ -106,7 +107,6 @@ class ShakeService : Service(), SensorEventListener {
         try {
             val prefs = getSharedPreferences("BackgroundShakePrefs", Context.MODE_PRIVATE)
             val contactsString = prefs.getString("contacts", "") ?: ""
-            // We use the stored message as a fallback, but we will dynamically generate one if we can get location
             var finalMessage = prefs.getString("message", "🚨 EMERGENCY! I need help!") ?: "🚨 EMERGENCY! I need help!"
 
             val contacts = contactsString.split(",").filter { it.isNotBlank() }
@@ -116,14 +116,13 @@ class ShakeService : Service(), SensorEventListener {
             }
 
             try {
-                val locationManager = getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
-                val provider = android.location.LocationManager.GPS_PROVIDER // or NETWORK_PROVIDER
-                val location = locationManager.getLastKnownLocation(provider)
-                    ?: locationManager.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
+                val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+                val location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                    ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
 
                 if (location != null) {
-                    val locationUrl = "https://maps.google.com/?q=\${location.latitude},\${location.longitude}"
-                    finalMessage = "🚨 EMERGENCY! I need help! My live location: \$locationUrl"
+                    val locationUrl = "https://maps.google.com/?q=${location.latitude},${location.longitude}"
+                    finalMessage = "🚨 EMERGENCY! I need help! My live location: $locationUrl"
                 }
             } catch (e: SecurityException) {
                 Log.e("ShakeService", "Location permission denied for background shake service", e)
@@ -165,4 +164,6 @@ class ShakeService : Service(), SensorEventListener {
             manager.createNotificationChannel(channel)
         }
     }
+
+    override fun onBind(intent: Intent?): IBinder? = null
 }
