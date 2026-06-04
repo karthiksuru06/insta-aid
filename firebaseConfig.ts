@@ -22,10 +22,19 @@ const app =
     ? initializeApp(firebaseConfig)
     : getApps()[0];
 
-// ✅ FIXED AUTH FOR REACT NATIVE
-export const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(ReactNativeAsyncStorage),
-});
+import { Platform } from "react-native";
+
+// ✅ FIXED AUTH FOR REACT NATIVE AND WEB
+import { Auth } from "firebase/auth";
+let auth: Auth;
+if (Platform.OS === "web") {
+  auth = initializeAuth(app);
+} else {
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(ReactNativeAsyncStorage),
+  });
+}
+export { auth };
 
 // Firestore (no change)
 export const db = getFirestore(app);

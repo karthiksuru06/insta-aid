@@ -18,9 +18,10 @@ import { faqData } from "../../constants/faqData";
 const normalize = (text: string) =>
   text
     ?.toLowerCase()
-    ?.replace(/[^\w\s\u00C0-\u024F\u1E00-\u1EFF\u0900-\u097F\u0C00-\u0C7F\u0CB0-\u0CFF\u0B80-\u0BFF\u0D00-\u0D7F\u0980-\u09FF\u0A80-\u0AFF\u0A00-\u0A7F]/gu, "")
+    ?.replace(/[^\w\s]/gu, "") // Keep it simple: remove punctuation
     ?.replace(/\s+/g, " ")
     ?.trim() || "";
+
 
 /* ---------------- FAQ MATCHING ---------------- */
 const getBestAnswer = (userQuestion: string) => {
@@ -49,16 +50,25 @@ const getBestAnswer = (userQuestion: string) => {
   return bestScore >= 3 ? bestAnswer : null;
 };
 
+
 /* ================= LIVE CHAT ================= */
 export default function LiveChat() {
   const { t } = useTranslation();
   const { theme } = useTheme();
   const router = useRouter();
   const scrollRef = useRef<ScrollView>(null);
+  const isMounted = useRef(true);
 
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   /* ---------- COPY ---------- */
   const copyToClipboard = async (text: string) => {
@@ -98,14 +108,18 @@ export default function LiveChat() {
       "হ্যালো", "নমস্কার", // Bengali
       "ഹലോ", "നമസ്കാരം", // Malayalam
     ];
+    
+    const normalizedText = normalize(text);
+    
     let reply =
-      greetings.includes(text.toLowerCase().trim())
-        ? t('liveChat.welcome')
+      greetings.includes(normalizedText)
+        ? t('liveChat.welcome') || "Hello! I am InstaAid's AI Assistant. How can I help you stay safe today?"
         : getBestAnswer(text) ||
-        t('liveChat.fallback');
+        t('liveChat.fallback') || "I'm your InstaAid safety assistant. I couldn't understand that. Please ask me about InstaAid features, safety tips, or how to use the app!";
 
     setTyping(true);
     setTimeout(() => {
+      if (!isMounted.current) return;
       setMessages((prev) => [
         ...prev,
         {
@@ -118,6 +132,7 @@ export default function LiveChat() {
       setTyping(false);
     }, 600);
   };
+
 
   /* ---------- SEND MESSAGE ---------- */
   const sendMessage = () => {
