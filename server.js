@@ -1,60 +1,61 @@
-// server.js
 import express from "express";
 import cors from "cors";
+import admin from "firebase-admin";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+// Initialize Firebase Admin for verifying tokens
+// For just verifying ID tokens, projectId is sufficient. 
+// No service account JSON is needed unless you want to write to Firestore from the backend.
+admin.initializeApp({
+  projectId: process.env.FIREBASE_PROJECT_ID || "instaaid-43394",
+});
 
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 
 // Middlewares
 app.use(cors());
 app.use(express.json());
 
-// ✅ Test endpoint (to verify server is reachable)
+// ✅ Authentication Middleware
+const verifyToken = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ success: false, message: "Unauthorized: Missing Token" });
+  }
+
+  const idToken = authHeader.split("Bearer ")[1];
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    req.user = decodedToken; // Attach user payload to request
+    next();
+  } catch (error) {
+    console.error("Token verification failed:", error.message);
+    return res.status(401).json({ success: false, message: "Unauthorized: Invalid Token" });
+  }
+};
+
+// ✅ Test endpoint (to verify server is reachable) - Public
 app.get("/api/test", (req, res) => {
   console.log("✅ [TEST] Server is reachable!");
   res.json({ success: true, message: "Server is working", timestamp: new Date() });
 });
 
-// Dummy in-memory users
-let users = [];
-
-// ✅ Register endpoint
-app.post("/api/register", (req, res) => {
-  const { name, phone, email, gender } = req.body;
-  if (!name || !phone || !email || !gender) {
-    return res.status(400).json({ message: "All fields required" });
-  }
-  users.push({ name, phone, email, gender });
-  res.json({ message: "User registered successfully", user: { name, phone, email, gender } });
-});
-
-// ✅ Login endpoint
-app.post("/api/login", (req, res) => {
-  const { email, phone } = req.body;
-  const user = users.find((u) => u.email === email && u.phone === phone);
-  if (!user) {
-    return res.status(401).json({ message: "Invalid credentials" });
-  }
-  res.json({ message: "Login successful", user });
-});
-
-// ✅ Fake call trigger
-app.post("/api/fakecall", (req, res) => {
+// ✅ Fake call trigger - PROTECTED
+app.post("/api/fakecall", verifyToken, (req, res) => {
+  console.log(`[FAKECALL] Triggered by user: ${req.user.email}`);
   res.json({ message: "Fake call triggered!", data: req.body });
 });
 
-// ✅ Filter alerts endpoint
-app.post("/api/alerts/filter", (req, res) => {
+// ✅ Filter alerts endpoint - PROTECTED
+app.post("/api/alerts/filter", verifyToken, (req, res) => {
   try {
     const { startDate, endDate, location, status, severity } = req.body;
     
-    console.log("🔍 [FILTER REQUEST] Received filter params:", {
-      startDate,
-      endDate,
-      location,
-      status,
-      severity,
-    });
+    console.log(`🔍 [FILTER REQUEST] From user: ${req.user.email}`);
+    console.log("Params:", { startDate, endDate, location, status, severity });
 
     // Validate at least one filter is provided
     if (!startDate && !endDate && !location && !status && !severity) {
@@ -65,19 +66,8 @@ app.post("/api/alerts/filter", (req, res) => {
       });
     }
 
-    // TODO: Connect to Firestore for real data filtering
-    // For now, returning mock response to confirm endpoint works
-    const mockFilters = {
-      startDate,
-      endDate,
-      location,
-      status,
-      severity,
-    };
-
-    console.log("✅ [FILTER SUCCESS] Filters processed successfully");
-    console.log("📊 [FILTER] Mock data structure:", mockFilters);
-
+    // Returning mock response to confirm endpoint works
+    const mockFilters = { startDate, endDate, location, status, severity };
     res.json({
       success: true,
       message: "Alerts filtered successfully",
@@ -96,12 +86,9 @@ app.post("/api/alerts/filter", (req, res) => {
 
 // Start server
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Server running at http://0.0.0.0:${PORT}`);
-  console.log(`🚀 Access from Android Emulator: http://10.0.2.2:${PORT}`);
-  console.log(`🚀 Access from localhost: http://localhost:${PORT}`);
+  console.log(`🚀 Production-Ready Server running on port ${PORT}`);
   console.log(`📝 Available endpoints:`);
-  console.log(`   - POST /api/register`);
-  console.log(`   - POST /api/login`);
-  console.log(`   - POST /api/fakecall`);
-  console.log(`   - POST /api/alerts/filter (NEW)`);
+  console.log(`   - GET  /api/test (Public)`);
+  console.log(`   - POST /api/fakecall (Protected)`);
+  console.log(`   - POST /api/alerts/filter (Protected)`);
 });

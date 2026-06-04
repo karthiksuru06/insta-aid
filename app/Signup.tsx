@@ -258,6 +258,12 @@ export default function Signup() {
       return;
     }
 
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+    if (!passwordRegex.test(password)) {
+      Alert.alert(t('error'), "Password must be at least 8 characters long and include an uppercase letter, a lowercase letter, and a number.");
+      return;
+    }
+
     try {
       const userCredential = await createUserWithEmailAndPassword(
         auth,
