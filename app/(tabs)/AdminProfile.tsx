@@ -9,9 +9,9 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { auth } from '../../firebaseConfig';
+import { auth , db } from '../../firebaseConfig';
 import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../../firebaseConfig';
+
 import { signOut } from 'firebase/auth';
 
 export default function AdminProfile() {

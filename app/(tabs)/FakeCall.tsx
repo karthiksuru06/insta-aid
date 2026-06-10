@@ -1,7 +1,7 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { doc, onSnapshot } from "firebase/firestore";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState , useMemo } from "react";
 import {
   FlatList,
   Image,
@@ -15,6 +15,9 @@ import {
 import { useTheme } from "../../components/ThemeContext";
 import { useFakeCall } from "../../contexts/FakeCallContext";
 import { auth, db } from "../../firebaseConfig";
+
+
+import { useTranslation } from "react-i18next";
 
 /* ---------------- TYPES ---------------- */
 type Caller = {
@@ -34,9 +37,6 @@ const getVoiceType = (relation?: string, name?: string) => {
   if (text.includes("delivery")) return "delivery";
   return "unknown";
 };
-
-import { useMemo } from "react";
-import { useTranslation } from "react-i18next";
 
 /* ---------------- COMPONENT ---------------- */
 export default function FakeCallApp() {

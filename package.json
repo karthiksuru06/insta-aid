@@ -59,6 +59,7 @@
     "expo-task-manager": "~14.0.7",
     "expo-web-browser": "~15.0.11",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
     "firebase": "^12.8.0",
     "firebase-admin": "^13.10.0",
     "i18next": "^25.7.3",
