@@ -12,8 +12,8 @@ import {
   Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { fetchAlertHistory, fetchLiveAlerts } from "../../services/firebaseServices";
-import { filterAlerts, testConnection } from "../../utils/api";
+import { collection, query, where, getDocs, orderBy, Timestamp } from "firebase/firestore";
+import { db } from "../../firebaseConfig";
 
 export default function AdminFilterAlertsScreen({ onClose }: { onClose?: () => void }): React.ReactElement {
   const [startDate, setStartDate] = useState("");
@@ -65,7 +65,6 @@ export default function AdminFilterAlertsScreen({ onClose }: { onClose?: () => v
     try {
       setLoading(true);
       
-      // Debug: Log filter inputs
       console.log("🔹 [FILTER SCREEN] Filter inputs:", {
         startDate,
         endDate,
@@ -82,30 +81,42 @@ export default function AdminFilterAlertsScreen({ onClose }: { onClose?: () => v
         return;
       }
 
-      // Send filter request to backend
-      console.log("📤 [FILTER SCREEN] Sending filter request to backend...");
-      const response = await filterAlerts({
-        startDate: startDate || undefined,
-        endDate: endDate || undefined,
-        location: location || undefined,
-        status: status || undefined,
-        severity: severity || undefined,
-      });
+      // Query Firestore directly (replaces non-existent backend route)
+      console.log("📤 [FILTER SCREEN] Querying Firestore directly...");
+      let q = query(collection(db, "alerts"), orderBy("timestamp", "desc"));
 
-      console.log("📥 [FILTER SCREEN] Backend response:", response);
-
-      if (!response.success) {
-        console.error("❌ [FILTER SCREEN] Filter failed:", response.message);
-        Alert.alert("Error", response.message || "Failed to apply filters");
-        setLoading(false);
-        return;
+      // Apply date range filter at the query level if both dates provided
+      if (startDate && isValidDate(startDate)) {
+        q = query(q, where("timestamp", ">=", Timestamp.fromDate(new Date(startDate))));
+      }
+      if (endDate && isValidDate(endDate)) {
+        const endOfDay = new Date(endDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        q = query(q, where("timestamp", "<=", Timestamp.fromDate(endOfDay)));
       }
 
-      // Success - navigate with results
-      console.log("✅ [FILTER SCREEN] Filter successful. Results count:", response.data?.length || 0);
+      const snapshot = await getDocs(q);
+      let alerts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      // Apply remaining filters client-side
+      if (status) {
+        alerts = alerts.filter((a: any) => a.status === status);
+      }
+      if (severity) {
+        alerts = alerts.filter((a: any) => a.severity === severity);
+      }
+      if (location) {
+        const lowerLoc = location.toLowerCase();
+        alerts = alerts.filter((a: any) => {
+          const alertLoc = typeof a.location === 'string' ? a.location : JSON.stringify(a.location || '');
+          return alertLoc.toLowerCase().includes(lowerLoc);
+        });
+      }
+
+      console.log("✅ [FILTER SCREEN] Filter successful. Results count:", alerts.length);
       router.replace({
         pathname: "/(tabs)/AdminAlertsManagement",
-        params: { filteredAlerts: JSON.stringify(response.data || []) },
+        params: { filteredAlerts: JSON.stringify(alerts) },
       });
     } catch (err) {
       console.error("❌ [FILTER SCREEN] Unexpected error:", err);

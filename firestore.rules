@@ -11,7 +11,9 @@ service cloud.firestore {
     // ✅ Users collection - authenticated users can read/write their own doc
     match /users/{uid} {
       allow read: if request.auth.uid == uid || isAdmin();
-      allow create: if request.auth.uid == uid;
+      allow create: if request.auth.uid == uid
+        && request.resource.data.role == 'User'
+        && request.resource.data.status == 'Inactive';
       allow update: if request.auth.uid == uid || isAdmin();
       allow delete: if request.auth.uid == uid || isAdmin();
     }
@@ -25,14 +27,14 @@ service cloud.firestore {
     match /alerts/{alertId} {
       allow read: if request.auth != null && (resource.data.userId == request.auth.uid || isAdmin());
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid || isAdmin();
+      allow update, delete: if request.auth != null && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
     // ✅ Contact submissions - users can only read/write their own; admins can read all
     match /contactSubmissions/{submissionId} {
       allow read: if request.auth != null && (resource.data.userId == request.auth.uid || isAdmin());
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid || isAdmin();
+      allow update, delete: if request.auth != null && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
     // ✅ Announcements - authenticated users can read, only admins can write

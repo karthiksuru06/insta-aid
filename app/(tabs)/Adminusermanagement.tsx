@@ -19,9 +19,9 @@ import { WebView } from "react-native-webview";
 import AdminProfileModal from "../../components/AdminProfileModal";
 import { withAdminGuard } from "../../components/withAdminGuard";
 import { auth } from "../../firebaseConfig";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import {
   addUser as addUserService,
-  deleteUser,
   migrateUserStatuses,
   saveUserData,
   subscribeToUsers
@@ -106,16 +106,18 @@ function UserManagementScreen() {
 
 
   const handleDelete = (userId: string) => {
-    Alert.alert("Delete User", "Are you sure? This will delete the user from the app.", [
+    Alert.alert("Delete User", "Are you sure? This will permanently delete the user's account and data.", [
       { text: "Cancel" },
       {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
           try {
-            await deleteUser(userId);
+            const functions = getFunctions();
+            const deleteUserAccount = httpsCallable(functions, 'deleteUserAccount');
+            await deleteUserAccount({ userId });
             setMenuUserId(null);
-            Alert.alert("Success", "User has been deleted successfully");
+            Alert.alert("Success", "User has been permanently deleted.");
             // Auto-updated via subscription
           } catch (error: any) {
             Alert.alert("Error", `Failed to delete user: ${error.message}`);
