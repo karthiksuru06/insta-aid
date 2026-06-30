@@ -1,11 +1,16 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ✅ Check if user is admin
+    // ✅ Check if user is admin.
+    // RBAC is driven by a custom claim (admin == true) set via the backend, with
+    // the `admins/{uid}` collection as a console-managed fallback. No email is
+    // hard-coded — to bootstrap the first admin, add an `admins/<uid>` doc with
+    // { role: 'admin' } from the Firebase console, or set the claim server-side.
     function isAdmin() {
-      return request.auth.token.admin == true ||
-             request.auth.token.email == 'instaaid08@gmail.com' ||
-             get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'admin';
+      return request.auth != null && (
+             request.auth.token.admin == true ||
+             (exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+              get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'admin'));
     }
 
     // ✅ Users collection - authenticated users can read/write their own doc
@@ -47,6 +52,28 @@ service cloud.firestore {
     match /activities/{activityId} {
       allow read: if request.auth != null && (resource.data.userId == request.auth.uid || isAdmin());
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+    }
+
+    // ✅ Live tracking sessions — bearer-token capability model.
+    // The doc ID is a cryptographically-random token shared via the SOS link, so
+    // a public GET by exact path IS the access capability. The collection can
+    // never be enumerated by the public (only admins may list, for the dashboard),
+    // and no internal alert/user IDs are exposed by the tracking link itself.
+    // Owner-only writes; live location is cleared by the app when sharing ends.
+    match /trackingSessions/{token} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create: if request.auth != null
+        && request.auth.uid == request.resource.data.userId;
+      allow update: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    // 🔒 Tracking write-secrets — backend (Admin SDK) ONLY. The relay validates
+    // the per-session secret server-side; clients must never read or write these.
+    match /trackingSecrets/{token} {
+      allow read, write: if false;
     }
 
     // ✅ Catch-all for other collections - deny by default to prevent leaks

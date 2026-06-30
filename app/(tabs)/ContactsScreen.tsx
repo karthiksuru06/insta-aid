@@ -26,7 +26,11 @@ import NeedHelpFab from "../../components/NeedHelpFab";
 import NotificationButton from '../../components/NotificationButton';
 import { useTheme } from "../../components/ThemeContext";
 import { auth, db } from "../../firebaseConfig";
-import { getUserData } from "../../services/firebaseServices";
+import SOSCountdownModal from "../../components/SOSCountdownModal";
+import { getUserData, saveAlert } from "../../services/firebaseServices";
+import { createTrackingSession, registerRelaySecret, trackingUrl, updateTrackingLocation } from "../../services/trackingService";
+import { setActiveRelaySecret, startSosTracking } from "../../services/sosTrackingTask";
+import * as Battery from "expo-battery";
 
 
 // --- Helper: calculate distance in meters ---
@@ -58,6 +62,10 @@ export default function ContactsScreen() {
   const [user, setUser] = useState(auth.currentUser);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
+  // SOS countdown + duplicate-send guard.
+  const [sosCountdownVisible, setSosCountdownVisible] = useState(false);
+  const sosSendingRef = useRef(false);
+  const lastSosAtRef = useRef<number>(0);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [editName, setEditName] = useState<string>("");
@@ -115,7 +123,7 @@ export default function ContactsScreen() {
             ]);
             return;
           }
-          await onShakeDetected();
+          requestSos();
           if (Platform.OS === "android") ToastAndroid.show("Emergency Shake Detected!", ToastAndroid.SHORT);
           else Alert.alert("Emergency Shake Detected!");
         }
@@ -125,16 +133,61 @@ export default function ContactsScreen() {
     return () => { subscriptionRef.current?.remove(); clearInterval(reset); };
   }, [contacts, isShakeDetectionOn]);
 
+  // Minimum gap between SOS sends — debounces repeat shake/test triggers.
+  const SOS_COOLDOWN_MS = 15000;
+
+  // Gate the real send behind a 3-second cancel countdown, unless one is
+  // already showing, a send is in flight, or we fired very recently.
+  function requestSos() {
+    if (sosCountdownVisible || sosSendingRef.current) return;
+    if (Date.now() - lastSosAtRef.current < SOS_COOLDOWN_MS) return;
+    setSosCountdownVisible(true);
+  }
+
   async function onShakeDetected() {
+    if (sosSendingRef.current) return;
+    sosSendingRef.current = true;
+    lastSosAtRef.current = Date.now();
     try {
       if (!user) return;
       const contactPhones = contacts.map(c => c.phone).filter((p): p is string => !!p);
       if (contactPhones.length === 0) return;
       let coordsLink = "location unavailable";
+      let trackingToken: string | null = null;
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === "granted") {
         const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
         coordsLink = `https://maps.google.com/?q=${pos.coords.latitude},${pos.coords.longitude}`;
+
+        // Upgrade to a secure live-tracking link + start continuous tracking.
+        try {
+          trackingToken = await createTrackingSession({ userId: user.uid, displayName: user.displayName ?? null });
+          coordsLink = trackingUrl(trackingToken);
+          const tk = trackingToken;
+          const fixed = pos.coords;
+          // Non-blocking — never delay the emergency SMS on backend/permission latency.
+          void (async () => {
+            try {
+              let battery: number | null = null;
+              try { battery = await Battery.getBatteryLevelAsync(); } catch {}
+              await updateTrackingLocation(tk, {
+                latitude: fixed.latitude,
+                longitude: fixed.longitude,
+                accuracy: fixed.accuracy ?? null,
+                speed: fixed.speed ?? null,
+                heading: fixed.heading ?? null,
+                battery,
+              }, Date.now());
+              await startSosTracking(tk);
+              const relaySecret = await registerRelaySecret(tk);
+              if (relaySecret) await setActiveRelaySecret(relaySecret);
+            } catch (e) {
+              console.warn("Tracking setup (background) failed", e);
+            }
+          })();
+        } catch (e) {
+          console.warn("Tracking session setup failed; sending static link", e);
+        }
       }
       try {
         const BackgroundShake = require('../../modules/background-shake').default;
@@ -157,7 +210,16 @@ export default function ContactsScreen() {
           await SMS.sendSMSAsync(contactPhones, `🚨 I need help! My location: ${coordsLink}`);
         }
       }
-    } catch (e) { console.warn(e); }
+
+      // Record the SOS in Firestore so it appears on the admin dashboard.
+      try {
+        await saveAlert(user.uid, { type: 'emergency_share', details: { coordsLink, contacts: contactPhones, trackingToken } });
+      } catch (e) {
+        console.warn("Failed to log shake alert", e);
+      }
+    } catch (e) { console.warn(e); } finally {
+      sosSendingRef.current = false;
+    }
   }
 
   useEffect(() => {
@@ -217,6 +279,11 @@ export default function ContactsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: isDark ? "#111" : "#FFF" }]}>
+      <SOSCountdownModal
+        visible={sosCountdownVisible}
+        onComplete={() => { setSosCountdownVisible(false); onShakeDetected(); }}
+        onCancel={() => setSosCountdownVisible(false)}
+      />
       <AppHeader
         title={t('emergencyContacts')}
         onBack={() => router.back()}
@@ -263,7 +330,7 @@ export default function ContactsScreen() {
           </View>
         )}
         ListEmptyComponent={<View style={styles.empty}><Text style={[styles.emptyText, { color: isDark ? "#ccc" : "#777" }]}>{t('noEmergencyContacts')}</Text></View>}
-        ListFooterComponent={<TouchableOpacity style={styles.testShakeButton} onPress={onShakeDetected}><Text style={styles.testShakeButtonText}>{t('testShakeAlert')}</Text></TouchableOpacity>}
+        ListFooterComponent={<TouchableOpacity style={styles.testShakeButton} onPress={requestSos}><Text style={styles.testShakeButtonText}>{t('testShakeAlert')}</Text></TouchableOpacity>}
         contentContainerStyle={{ paddingBottom: 100 }}
       />
 

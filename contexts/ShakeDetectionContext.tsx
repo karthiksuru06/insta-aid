@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { Platform } from 'react-native';
 
 interface ShakeDetectionContextType {
     isShakeDetectionOn: boolean;
@@ -12,7 +13,7 @@ interface ShakeDetectionContextType {
 
 const ShakeDetectionContext = createContext<ShakeDetectionContextType | undefined>(undefined);
 
-// Global variable to access toggle state outside React components
+// Global variable to access toggle state outside React components (e.g. ShakeService).
 export let globalShakeDetectionEnabled = false;
 
 export const ShakeDetectionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -51,6 +52,28 @@ export const ShakeDetectionProvider: React.FC<{ children: React.ReactNode }> = (
         saveShakeDetection();
     }, [isShakeDetectionOn]);
 
+    // Safely probe the native shake module WITHOUT auto-starting it, so a missing
+    // or broken native module can never crash app launch. If it isn't available we
+    // disable the feature rather than letting a later call throw.
+    useEffect(() => {
+        if (Platform.OS === 'web') return;
+        (async () => {
+            try {
+                if (isShakeDetectionOn) {
+                    const mod = require('../modules/background-shake');
+                    const BackgroundShake = mod?.default;
+                    if (!(BackgroundShake && typeof BackgroundShake.startService === 'function')) {
+                        console.warn('[ShakeDetection] Native module not available. Disabling feature to prevent crash.');
+                        setIsShakeDetectionOn(false);
+                    }
+                }
+            } catch (error) {
+                console.error('[ShakeDetection] CRITICAL: Failed to load shake module. Disabling to prevent crash.', error);
+                setIsShakeDetectionOn(false);
+            }
+        })();
+    }, [isShakeDetectionOn]);
+
     return (
         <ShakeDetectionContext.Provider value={{ isShakeDetectionOn, setIsShakeDetectionOn, shakeDetectedButDisabled, setShakeDetectedButDisabled, isShakeLocked, setIsShakeLocked }}>
             {children}
@@ -66,10 +89,10 @@ export const useShakeDetection = () => {
     return context;
 };
 
-// Function to get toggle state from any file
+// Read the toggle state from any non-React file. Prefers the in-memory global
+// (kept in sync by the provider); falls back to AsyncStorage.
 export const getShakeDetectionState = async (): Promise<boolean> => {
     try {
-        // Prefer the in-memory global (kept in sync by provider). AsyncStorage fallback if needed.
         if (typeof globalShakeDetectionEnabled === 'boolean') return globalShakeDetectionEnabled;
         const value = await AsyncStorage.getItem("shakeDetectionEnabled");
         return value === "true";

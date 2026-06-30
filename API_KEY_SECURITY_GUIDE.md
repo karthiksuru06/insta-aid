@@ -9,7 +9,7 @@ To prevent quota theft and unexpected billing charges, you **must** restrict thi
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/).
 2. Select your project (`instaaid-43394` or similar).
 3. Navigate to **APIs & Services > Credentials**.
-4. Click on your Google Maps API Key (`AIzaSyBNN-d18ZNLvoj6-YrfNP0cJk5VmCh0JaY`).
+4. Click on your Google Maps API Key (the `AIzaSy…` key configured as `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY`).
 5. Under **Application restrictions**, select **Android apps** (and/or iOS apps).
    - Click **Add an item**.
    - Enter your package name: `com.instaaid.app` (from your `app.json`).

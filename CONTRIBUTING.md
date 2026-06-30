@@ -8,7 +8,7 @@ First off, thank you for considering contributing to Instaaid! It's people like 
 2. **Environment Variables**: Create a `.env` file based on `.env.example` so the app can communicate with Firebase and the local backend server.
 3. **Install Dependencies**: Run `npm install` in the project root.
 4. **Create a Branch**: Create a new branch for your feature or bugfix (`git checkout -b feature/your-feature-name`).
-5. **Make Changes**: Develop your feature. Ensure you run the backend (`node server.js`) and mobile app (`npx expo start`) concurrently to test full-stack changes.
+5. **Make Changes**: Develop your feature. Ensure you run the backend (`node server.mjs`) and mobile app (`npx expo start`) concurrently to test full-stack changes.
 6. **Commit**: Write clear, descriptive commit messages.
 7. **Push & Pull Request**: Push your branch to GitHub and open a Pull Request against the `main` branch.
 

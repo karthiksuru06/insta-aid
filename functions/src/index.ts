@@ -5,6 +5,43 @@ import axios from 'axios';
 admin.initializeApp();
 
 /**
+ * Verify that the caller is an admin.
+ *
+ * RBAC is enforced via Firebase Authentication custom claims (`admin === true`),
+ * which are set through the backend `/api/admin/set-claim` endpoint. As a
+ * defence-in-depth fallback we also accept membership of the `admins`
+ * collection (keyed by uid). No email addresses are hard-coded.
+ *
+ * Throws an HttpsError if the caller is not authenticated or not an admin.
+ */
+async function assertCallerIsAdmin(context: functions.https.CallableContext): Promise<void> {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    if (context.auth.token?.admin === true) {
+        return;
+    }
+
+    const adminDoc = await admin.firestore().collection('admins').doc(context.auth.uid).get();
+    if (adminDoc.exists && adminDoc.data()?.role === 'admin') {
+        return;
+    }
+
+    throw new functions.https.HttpsError('permission-denied', 'Caller does not have admin privileges');
+}
+
+/** Basic E.164-ish phone validation: optional leading +, 7-15 digits. */
+function isValidPhone(phone: unknown): phone is string {
+    return typeof phone === 'string' && /^\+?[0-9]{7,15}$/.test(phone.replace(/[\s-]/g, ''));
+}
+
+// Per-user emergency SMS rate limit (defence against SMS-spam / billing abuse).
+const SMS_RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+const SMS_RATE_LIMIT_MAX = 3;                    // max sends per window per user
+const SMS_MAX_RECIPIENTS = 10;                   // max phones per request
+
+/**
  * Cloud Function to delete a user from both Firestore and Firebase Authentication
  * 
  * This function should only be called by admins to delete users completely.
@@ -17,16 +54,11 @@ admin.initializeApp();
  *   userId: string  // UID of the user to delete
  * }
  */
-export const deleteUserAccount = functions.https.onCall(async (data, context) => {
+export const deleteUserAccount = functions.https.onCall(async (data: any, context: functions.https.CallableContext) => {
     try {
-        // Check authentication
-        if (!context.auth) {
-            throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
-        }
+        // Only admins may delete arbitrary user accounts.
+        await assertCallerIsAdmin(context);
 
-        // Check if caller is an admin (optional - add additional validation if needed)
-        // You can verify the caller is an admin by checking custom claims or Firestore roles
-        
         const { userId } = data;
 
         // Validate input
@@ -34,7 +66,7 @@ export const deleteUserAccount = functions.https.onCall(async (data, context) =>
             throw new functions.https.HttpsError('invalid-argument', 'Valid userId is required');
         }
 
-        console.log(`[deleteUserAccount] Admin ${context.auth.uid} requesting deletion of user ${userId}`);
+        console.log(`[deleteUserAccount] Admin ${context.auth?.uid} requesting deletion of user ${userId}`);
 
         // Delete from Firestore
         try {
@@ -96,12 +128,17 @@ export const deleteUserAccount = functions.https.onCall(async (data, context) =>
  *   userName: string
  * }
  */
-export const sendEmergencySms = functions.https.onCall(async (data, context) => {
+export const sendEmergencySms = functions.https.onCall(async (data: any, context: functions.https.CallableContext) => {
     try {
-        // Check authentication
+        // Check authentication. The sender is the person in distress, so any
+        // authenticated user is a legitimate caller — but we still rate-limit
+        // and validate to prevent SMS-spam / billing-abuse from compromised or
+        // scripted clients.
         if (!context.auth) {
             throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
         }
+        const callerUid = context.auth.uid;
+        const db = admin.firestore();
 
         const { phones, message, latitude, longitude, userName } = data;
 
@@ -110,8 +147,31 @@ export const sendEmergencySms = functions.https.onCall(async (data, context) => 
             throw new functions.https.HttpsError('invalid-argument', 'Valid phone numbers array required');
         }
 
-        if (!message || typeof message !== 'string') {
-            throw new functions.https.HttpsError('invalid-argument', 'Valid message string required');
+        if (phones.length > SMS_MAX_RECIPIENTS) {
+            throw new functions.https.HttpsError('invalid-argument', `At most ${SMS_MAX_RECIPIENTS} recipients allowed`);
+        }
+
+        const invalidPhones = phones.filter((p) => !isValidPhone(p));
+        if (invalidPhones.length > 0) {
+            throw new functions.https.HttpsError('invalid-argument', 'One or more phone numbers are invalid');
+        }
+
+        if (!message || typeof message !== 'string' || message.length > 1000) {
+            throw new functions.https.HttpsError('invalid-argument', 'Valid message string required (max 1000 chars)');
+        }
+
+        // Per-user rate limiting: count this user's sends in the recent window.
+        const windowStart = admin.firestore.Timestamp.fromMillis(Date.now() - SMS_RATE_LIMIT_WINDOW_MS);
+        const recentSends = await db.collection('emergency_logs')
+            .where('userId', '==', callerUid)
+            .where('timestamp', '>', windowStart)
+            .count()
+            .get();
+        if (recentSends.data().count >= SMS_RATE_LIMIT_MAX) {
+            throw new functions.https.HttpsError(
+                'resource-exhausted',
+                'Emergency SMS rate limit reached. Please wait a few minutes before trying again.'
+            );
         }
 
         console.log(`[sendEmergencySms] Sending emergency alert from ${userName || 'Unknown'}`);
@@ -139,10 +199,8 @@ export const sendEmergencySms = functions.https.onCall(async (data, context) => 
         }
 
         // Log the emergency alert
-        const userId = context.auth.uid;
-        const db = admin.firestore();
         await db.collection('emergency_logs').add({
-            userId,
+            userId: callerUid,
             timestamp: admin.firestore.FieldValue.serverTimestamp(),
             location: {
                 latitude,

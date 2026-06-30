@@ -44,9 +44,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (snap.exists()) {
           const data = snap.data();
           setProfile(data);
-          // Check if user has admin role or is the superadmin email
-          const isSuperAdmin = data.email === "instaaid08@gmail.com";
-          setIsAdmin(data.role === "admin" || data.role === "superadmin" || isSuperAdmin);
+          // Admin status is driven by role only (set server-side via custom
+          // claims / the admins collection). No email is hard-coded.
+          // Note: this client flag is for UI only — all privileged operations
+          // are still enforced by Firestore rules and the backend.
+          setIsAdmin(data.role === "admin" || data.role === "superadmin");
         } else {
           const defaultProfile = {
             uid: firebaseUser.uid,

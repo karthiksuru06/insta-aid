@@ -1,5 +1,3 @@
-// npx expo install react-native-maps -- install it then run the app
-
 import { Feather, Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';

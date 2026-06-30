@@ -46,7 +46,7 @@ export default function SplashScreen() {
         const authModule = (await import('../../firebaseConfig')).auth;
 
         // Check auth state with timeout
-        let user = null;
+        let user: any = null;
         let finished = false;
 
         const unsub = onAuthStateChanged(authModule, (u) => {

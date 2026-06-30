@@ -142,7 +142,7 @@ export default function SilentSOS() {
               const { latitude, longitude } = location;
 
               // Save alert to Firebase
-              await saveAlert({
+              await saveAlert(auth.currentUser?.uid || "unknown", {
                 title: "Motion Sensor False Alarm",
                 description: "User triggered a false alarm from motion sensor detection",
                 location: `Lat: ${latitude.toFixed(6)}, Lng: ${longitude.toFixed(6)}`,
@@ -190,7 +190,7 @@ export default function SilentSOS() {
               const { latitude, longitude } = location;
 
               // Save alert to Firebase
-              await saveAlert({
+              await saveAlert(auth.currentUser?.uid || "unknown", {
                 title: "Instant Aid Request",
                 description: "User requested immediate assistance from nearby users",
                 location: `Lat: ${latitude.toFixed(6)}, Lng: ${longitude.toFixed(6)}`,

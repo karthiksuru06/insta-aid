@@ -13,7 +13,14 @@ import {
   registerNotificationCategories,
   requestFakeCallNotificationPermissions,
 } from "../services/fakeCallNotificationService";
-import { ShakeDetectionProvider } from '../components/ShakeDetectionContext';
+import { ShakeDetectionProvider } from '../contexts/ShakeDetectionContext';
+import RootErrorBoundary from "../components/RootErrorBoundary";
+import { initSentry } from "../services/sentry";
+// Side-effect import: registers the SOS background-location TaskManager task.
+import "../services/sosTrackingTask";
+
+// Initialize crash reporting as early as possible (no-op without a DSN).
+initSentry();
 
 // Notification listener component
 function NotificationListener() {
@@ -108,6 +115,7 @@ function NotificationListener() {
 
 export default function RootLayout() {
   return (
+    <RootErrorBoundary>
     <I18nextProvider i18n={i18n}>
       <ThemeProvider>
         <NotificationProvider>
@@ -142,5 +150,6 @@ export default function RootLayout() {
         </NotificationProvider>
       </ThemeProvider>
     </I18nextProvider>
+    </RootErrorBoundary>
   );
 }

@@ -1,10 +1,22 @@
 import 'dotenv/config';
 
+// The Sentry native config plugin uploads source maps during the native build
+// and needs SENTRY_ORG / SENTRY_PROJECT (and SENTRY_AUTH_TOKEN). When those
+// aren't set we omit it entirely so the EAS/Gradle build can't fail on it.
+// Runtime JS error reporting (services/sentry.ts) still works with just a DSN.
+const sentryPlugin =
+  process.env.SENTRY_ORG && process.env.SENTRY_PROJECT
+    ? [[
+        "@sentry/react-native/expo",
+        { organization: process.env.SENTRY_ORG, project: process.env.SENTRY_PROJECT },
+      ]]
+    : [];
+
 export default {
   expo: {
     name: "Instaaid",
     slug: "Instaaid",
-    version: "1.0.0",
+    version: "1.0.2",
     platforms: [
       "android",
       "ios",
@@ -31,13 +43,8 @@ export default {
     },
     android: {
       package: "com.instaaid.app",
-      versionCode: 1,
+      versionCode: 3,
       googleServicesFile: "./google-services.json",
-      config: {
-        googleMaps: {
-          apiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || "fallback_or_missing_key"
-        }
-      },
       adaptiveIcon: {
         foregroundImage: "./assets/images/image.png",
         backgroundColor: "#ffffff"
@@ -108,7 +115,8 @@ export default {
       "expo-dev-client",
       "@react-native-google-signin/google-signin",
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      ...sentryPlugin
     ],
     extra: {
       router: {},

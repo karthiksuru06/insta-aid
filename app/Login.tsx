@@ -121,8 +121,8 @@ const Login: React.FC = () => {
       const adminRef = doc(db, 'admins', userEmail);
       const adminSnap = await getDoc(adminRef);
 
-      if (adminSnap.exists() || userEmail === 'instaaid08@gmail.com') {
-        // ✅ ADMIN
+      if (adminSnap.exists()) {
+        // ✅ ADMIN — membership of the admins collection only; no hard-coded email.
         router.replace('../(tabs)/Admindashboard');
       } else if (firstLoginFlag && safetyCompleted) {
         // ✅ Full setup completed - go directly to Home
@@ -221,7 +221,23 @@ const Login: React.FC = () => {
 
       const firebaseServices = await import('../services/firebaseServices');
       try {
-        // Use saveUserData with merge to safely create/update user doc
+        // First Google sign-in: create a Firestore rule-compliant user doc.
+        // firestore.rules requires role 'User' + status 'Inactive' on create.
+        // Role is written ONLY on creation, so repeat logins never overwrite an
+        // existing user's (or admin's) role.
+        const existing = await firebaseServices.getUserData(uid);
+        if (!existing) {
+          await firebaseServices.saveUserData(uid, {
+            uid,
+            name: result.user.displayName || '',
+            email: result.user.email,
+            role: 'User',
+            status: 'Inactive',
+          });
+        }
+
+        // Activate + refresh profile fields on every login (doc now exists, so
+        // this is an allowed update rather than a create).
         await firebaseServices.saveUserData(uid, {
           email: result.user.email,
           displayName: result.user.displayName || '',

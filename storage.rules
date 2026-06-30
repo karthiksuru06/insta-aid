@@ -1,9 +1,11 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // ✅ Helper function to check if user is admin
+    // ✅ Helper function to check if user is admin.
+    // Driven by the custom claim (admin == true) set via the backend. No email
+    // is hard-coded.
     function isAdmin() {
-      return request.auth.token.admin == true || request.auth.token.email == 'instaaid08@gmail.com';
+      return request.auth != null && request.auth.token.admin == true;
     }
 
     // ✅ Profile pictures: Users can only upload/read their own

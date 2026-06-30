@@ -12,12 +12,15 @@ import { useTranslation } from 'react-i18next';
 import { Alert, Platform, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AnnouncementButton from '../../components/AnnouncementButton';
+import SOSCountdownModal from '../../components/SOSCountdownModal';
 import { AvatarComponent } from '../../components/AvatarComponent';
 import NeedHelpFab from '../../components/NeedHelpFab';
 import NotificationButton from '../../components/NotificationButton';
 import { useTheme } from '../../components/ThemeContext';
 import { auth, db } from '../../firebaseConfig';
 import { usePermissions } from '../../hooks/usePermissions';
+import { createTrackingSession, registerRelaySecret, trackingUrl, updateTrackingLocation } from '../../services/trackingService';
+import { setActiveRelaySecret, startSosTracking } from '../../services/sosTrackingTask';
 
 // Shake detection constants
 const SHAKE_THRESHOLD = 2.0;
@@ -40,6 +43,10 @@ export default function HomeScreen() {
     const [isShakeDetectionOn, setIsShakeDetectionOn] = useState(false);
     const [shakeCount, setShakeCount] = useState<number>(0);
     const shakeTimeoutRef = useRef<number | null>(null);
+    // SOS countdown + duplicate-send guard.
+    const [sosCountdownVisible, setSosCountdownVisible] = useState(false);
+    const sosSendingRef = useRef(false);
+    const lastSosAtRef = useRef<number>(0);
 
     // Auth listener
     useEffect(() => {
@@ -277,11 +284,25 @@ export default function HomeScreen() {
                 return;
             }
 
-            sendEmergencySMS();
+            requestEmergencySMS();
         }
     }, [shakeCount, isShakeDetectionOn]);
 
+    // Minimum gap between SOS sends — debounces repeat shake triggers.
+    const SOS_COOLDOWN_MS = 15000;
+
+    // Gate the real send behind a 3-second cancel countdown, unless one is
+    // already showing, a send is in flight, or we fired very recently.
+    const requestEmergencySMS = () => {
+        if (sosCountdownVisible || sosSendingRef.current) return;
+        if (Date.now() - lastSosAtRef.current < SOS_COOLDOWN_MS) return;
+        setSosCountdownVisible(true);
+    };
+
     const sendEmergencySMS = async (): Promise<void> => {
+        if (sosSendingRef.current) return;
+        sosSendingRef.current = true;
+        lastSosAtRef.current = Date.now();
         try {
             const currentUser = auth.currentUser;
             if (!currentUser) return;
@@ -300,8 +321,41 @@ export default function HomeScreen() {
             }
 
             const { coords } = await Location.getCurrentPositionAsync({});
-            const locationUrl = `https://maps.google.com/?q=${coords.latitude},${coords.longitude}`;
-            const message = `🚨 EMERGENCY! I need help! My live location: ${locationUrl}`;
+
+            // Share a SECURE LIVE-TRACKING link (continuous), not a static pin.
+            // Fall back to a static maps link if session setup fails.
+            let locationUrl = `https://maps.google.com/?q=${coords.latitude},${coords.longitude}`;
+            try {
+                const trackingToken = await createTrackingSession({
+                    userId: currentUser.uid,
+                    displayName: currentUser.displayName ?? null,
+                });
+                locationUrl = trackingUrl(trackingToken);
+                // Best-effort and explicitly NON-BLOCKING — a slow/cold backend or a
+                // permission dialog must never delay the emergency SMS below.
+                void (async () => {
+                    try {
+                        let battery: number | null = null;
+                        try { battery = await Battery.getBatteryLevelAsync(); } catch {}
+                        await updateTrackingLocation(trackingToken, {
+                            latitude: coords.latitude,
+                            longitude: coords.longitude,
+                            accuracy: coords.accuracy ?? null,
+                            speed: coords.speed ?? null,
+                            heading: coords.heading ?? null,
+                            battery,
+                        }, Date.now());
+                        await startSosTracking(trackingToken);
+                        const relaySecret = await registerRelaySecret(trackingToken);
+                        if (relaySecret) await setActiveRelaySecret(relaySecret);
+                    } catch (e) {
+                        console.warn('Tracking setup (background) failed', e);
+                    }
+                })();
+            } catch (e) {
+                console.warn('Tracking session setup failed; sending static link', e);
+            }
+            const message = `🚨 EMERGENCY! I need help! Track me live: ${locationUrl}`;
 
             try {
                 const BackgroundShake = require('../../modules/background-shake').default;
@@ -332,6 +386,8 @@ export default function HomeScreen() {
         } catch (err) {
             console.warn('Emergency SMS error', err);
             Alert.alert(t('alerts.error'), t('alerts.failedToGetLocationOrSendSMS'));
+        } finally {
+            sosSendingRef.current = false;
         }
     };
 
@@ -356,6 +412,11 @@ export default function HomeScreen() {
 
     return (
         <View style={[styles.container, { backgroundColor: theme === "dark" ? "#111" : "#fff" }]}>
+            <SOSCountdownModal
+                visible={sosCountdownVisible}
+                onComplete={() => { setSosCountdownVisible(false); sendEmergencySMS(); }}
+                onCancel={() => setSosCountdownVisible(false)}
+            />
             {/* Header */}
             <View style={[styles.headerBg, { backgroundColor: theme === "dark" ? "#111" : "#fff", paddingTop: insets.top, height: 75 + insets.top }]}>
                 <View style={[styles.headerRow, { paddingBottom: 6 }]}>

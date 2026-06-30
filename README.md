@@ -17,7 +17,7 @@ Instaaid is a React Native mobile application designed for personal safety, loca
 ### Running Locally
 To start the backend server:
 ```bash
-node server.js
+node server.mjs
 ```
 The server will run on port 5000.
 

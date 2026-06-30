@@ -41,6 +41,10 @@ yarn-error.*
 /ios
 /android
 
+# build artifacts (exceed GitHub's 100MB file limit; upload to Play Console manually)
+*.aab
+*.apk
+
 # app-example
 app-example
 
