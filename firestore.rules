@@ -19,7 +19,14 @@ service cloud.firestore {
       allow create: if request.auth.uid == uid
         && request.resource.data.role == 'User'
         && request.resource.data.status == 'Inactive';
-      allow update: if request.auth.uid == uid || isAdmin();
+      // A user may update their OWN doc but must NOT change role/status (those are
+      // admin-controlled — otherwise a suspended user could re-activate themselves
+      // or self-assign a role). Admins may change anything.
+      allow update: if isAdmin() || (
+        request.auth.uid == uid
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.status == resource.data.status
+      );
       allow delete: if request.auth.uid == uid || isAdmin();
     }
 

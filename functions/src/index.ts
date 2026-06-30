@@ -190,9 +190,11 @@ export const sendEmergencySms = functions.https.onCall(async (data: any, context
                 results.success.push(phone);
                 console.log(`[sendEmergencySms] ✅ SMS sent to ${phone}`);
             } catch (error: any) {
+                // Don't echo upstream provider (Twilio/Fast2SMS) diagnostics to the
+                // client; keep the detail in server logs only.
                 results.failed.push({
                     phone,
-                    error: error.message || 'Unknown error'
+                    error: 'send_failed'
                 });
                 console.error(`[sendEmergencySms] ❌ Failed to send SMS to ${phone}:`, error);
             }
@@ -221,9 +223,15 @@ export const sendEmergencySms = functions.https.onCall(async (data: any, context
         };
     } catch (error: any) {
         console.error('[sendEmergencySms] Error:', error);
+        // Preserve deliberate, typed errors (unauthenticated / invalid-argument /
+        // resource-exhausted); only wrap truly-unexpected errors, and never leak
+        // raw internal/SDK messages to the client.
+        if (error instanceof functions.https.HttpsError) {
+            throw error;
+        }
         throw new functions.https.HttpsError(
             'internal',
-            error.message || 'Failed to send emergency SMS'
+            'Failed to send emergency SMS'
         );
     }
 });

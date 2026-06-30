@@ -50,10 +50,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           // are still enforced by Firestore rules and the backend.
           setIsAdmin(data.role === "admin" || data.role === "superadmin");
         } else {
+          // Must match Signup/Login AND firestore.rules, which require the users
+          // doc to be created with role 'User' (capital) and status 'Inactive' —
+          // otherwise this setDoc is rejected by the create rule.
           const defaultProfile = {
             uid: firebaseUser.uid,
             email: firebaseUser.email,
-            role: "user",
+            role: "User",
+            status: "Inactive",
             createdAt: new Date(),
           };
           await setDoc(docRef, defaultProfile);

@@ -10,6 +10,7 @@ import {
   isValidRole,
   roleGrantsAdminClaim,
   canGrantRole,
+  canModifyTarget,
   isValidStatus,
   isValidSearchTerm,
   isValidCoordinate,
@@ -85,6 +86,20 @@ test("canGrantRole: only superadmin may grant elevated roles", () => {
   assert.equal(canGrantRole("admin", "user"), true);
   // Unknown target role is rejected.
   assert.equal(canGrantRole("superadmin", "root"), false);
+});
+
+test("canModifyTarget: only superadmin may modify an elevated account (no lateral demotion)", () => {
+  // A regular admin must NOT be able to overwrite/demote a peer admin or a superadmin.
+  assert.equal(canModifyTarget("admin", "admin"), false);
+  assert.equal(canModifyTarget("admin", "superadmin"), false);
+  assert.equal(canModifyTarget("moderator", "admin"), false);
+  // Superadmin may modify any account.
+  assert.equal(canModifyTarget("superadmin", "admin"), true);
+  assert.equal(canModifyTarget("superadmin", "superadmin"), true);
+  // Modifying a non-elevated (or never-elevated/undefined) account is allowed for admins.
+  assert.equal(canModifyTarget("admin", "user"), true);
+  assert.equal(canModifyTarget("admin", "moderator"), true);
+  assert.equal(canModifyTarget("admin", undefined), true);
 });
 
 test("isValidStatus accepts only the known statuses", () => {

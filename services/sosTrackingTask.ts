@@ -18,7 +18,13 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Battery from "expo-battery";
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
-import { locationChangedEnough, relayLocationUpdate, updateTrackingLocation } from "./trackingService";
+import {
+  endTrackingSession,
+  locationChangedEnough,
+  relayEnd,
+  relayLocationUpdate,
+  updateTrackingLocation,
+} from "./trackingService";
 
 export const SOS_LOCATION_TASK = "sos-location-tracking";
 const ACTIVE_TOKEN_KEY = "activeTrackingToken";
@@ -141,4 +147,25 @@ export async function stopSosTracking(): Promise<string | null> {
   await AsyncStorage.removeItem(ACTIVE_SECRET_KEY);
   await AsyncStorage.removeItem(LAST_COORD_KEY);
   return token;
+}
+
+/** Whether an SOS session is currently active on this device. */
+export async function hasActiveSosSession(): Promise<boolean> {
+  return (await AsyncStorage.getItem(ACTIVE_TOKEN_KEY)) != null;
+}
+
+/** End the active SOS session: stop location updates AND flip the session to
+ *  ENDED so the public /track link immediately stops exposing live location.
+ *  Reads the relay secret BEFORE stopping (stopSosTracking clears it), then ends
+ *  via the backend relay (works even if app auth lapsed) with a direct Firestore
+ *  write as fallback. Safe to call when nothing is active. */
+export async function endSosTracking(): Promise<void> {
+  const token = await AsyncStorage.getItem(ACTIVE_TOKEN_KEY);
+  const secret = await AsyncStorage.getItem(ACTIVE_SECRET_KEY);
+  await stopSosTracking();
+  if (!token) return;
+  if (secret) {
+    try { await relayEnd(token, secret); } catch (e) { console.warn("[SOS-TRACK] relay end failed", e); }
+  }
+  try { await endTrackingSession(token); } catch (e) { console.warn("[SOS-TRACK] direct end failed", e); }
 }

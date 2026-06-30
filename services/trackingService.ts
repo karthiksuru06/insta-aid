@@ -39,14 +39,18 @@ export async function generateTrackingToken(): Promise<string> {
     .join("");
 }
 
-/** Create a new ACTIVE tracking session and return its token. */
+/** Create a new ACTIVE tracking session and return its token.
+ *  Pass a pre-generated `token` to decouple the (local, instant) token from the
+ *  Firestore write, so an emergency SMS can carry the live link without waiting
+ *  on the network round-trip. */
 export async function createTrackingSession(params: {
   userId: string;
   displayName?: string | null;
   alertId?: string | null;
   ttlMs?: number;
+  token?: string;
 }): Promise<string> {
-  const token = await generateTrackingToken();
+  const token = params.token ?? (await generateTrackingToken());
   const ttl = params.ttlMs ?? DEFAULT_TTL_MS;
   await setDoc(doc(db, TRACKING_COLLECTION, token), {
     token,
@@ -98,24 +102,44 @@ export function trackingUrl(token: string): string {
 // the Admin SDK. See server.mjs → /api/tracking/*.
 // ---------------------------------------------------------------------------
 
-/** Register a backend write-secret for this session. Returns the secret or null. */
-export async function registerRelaySecret(token: string): Promise<string | null> {
+/** Register a backend write-secret for this session. Returns the secret or null.
+ *  Retries with backoff because this is fired at SOS time when the free-tier
+ *  backend is most likely cold — a single attempt that times out would silently
+ *  forfeit the killed-app relay path for the whole session. */
+export async function registerRelaySecret(
+  token: string,
+  attempts = 3
+): Promise<string | null> {
+  const user = auth.currentUser;
+  if (!user) return null;
+  let idToken: string;
   try {
-    const user = auth.currentUser;
-    if (!user) return null;
-    const idToken = await user.getIdToken();
-    const res = await fetch(`${API_BASE}/tracking/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-      body: JSON.stringify({ token }),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return typeof data?.secret === "string" ? data.secret : null;
+    idToken = await user.getIdToken();
   } catch (e) {
-    console.warn("[TRACK] relay secret registration failed", e);
+    console.warn("[TRACK] could not get id token for relay registration", e);
     return null;
   }
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetch(`${API_BASE}/tracking/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ token }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (typeof data?.secret === "string") return data.secret;
+      }
+    } catch (e) {
+      console.warn(`[TRACK] relay secret registration attempt ${i + 1} failed`, e);
+    }
+    // Backoff before retrying (skip the wait after the final attempt). Gives a
+    // cold Render dyno time to wake (~first request triggers the spin-up).
+    if (i < attempts - 1) {
+      await new Promise((r) => setTimeout(r, 2000 * (i + 1)));
+    }
+  }
+  return null;
 }
 
 /** Relay a location update via the backend (works even when the app is killed). */

@@ -13,6 +13,7 @@ import {
   isValidRole,
   roleGrantsAdminClaim,
   canGrantRole,
+  canModifyTarget,
   isValidStatus,
   isValidSearchTerm,
   isValidCoordinate,
@@ -251,29 +252,40 @@ app.post("/api/tracking/location", relayLimiter, async (req, res) => {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
     const sessionRef = db.collection("trackingSessions").doc(token);
-    const sessionSnap = await sessionRef.get();
-    if (!sessionSnap.exists) {
-      return res.status(404).json({ success: false, message: "Session not found" });
-    }
-    const session = sessionSnap.data();
-    if (session.status !== "ACTIVE") {
-      return res.status(409).json({ success: false, message: "Session not active" });
-    }
-    if (session.expiresAt && session.expiresAt.toMillis() < Date.now()) {
-      return res.status(410).json({ success: false, message: "Session expired" });
-    }
-    await sessionRef.update({
-      location: {
-        latitude,
-        longitude,
-        accuracy: typeof accuracy === "number" ? accuracy : null,
-        speed: typeof speed === "number" ? speed : null,
-        heading: typeof heading === "number" ? heading : null,
-        battery: typeof battery === "number" ? battery : null,
-        timestamp: typeof deviceTimeMs === "number" ? Timestamp.fromMillis(deviceTimeMs) : Timestamp.now(),
-      },
+    const incomingMs = typeof deviceTimeMs === "number" ? deviceTimeMs : Date.now();
+    // Atomic read+write so the liveness check and the monotonicity guard can't
+    // race. Drop out-of-order/stale fixes so watchers never see the position jump
+    // backwards during an active emergency.
+    const result = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(sessionRef);
+      if (!snap.exists) return { code: 404, message: "Session not found" };
+      const session = snap.data();
+      if (session.status !== "ACTIVE") return { code: 409, message: "Session not active" };
+      if (session.expiresAt && session.expiresAt.toMillis() < Date.now()) {
+        return { code: 410, message: "Session expired" };
+      }
+      const storedMs = session.location?.timestamp?.toMillis?.() ?? -Infinity;
+      if (incomingMs <= storedMs) {
+        // Stale or duplicate fix — acknowledge success but don't regress.
+        return { code: 200, stale: true };
+      }
+      tx.update(sessionRef, {
+        location: {
+          latitude,
+          longitude,
+          accuracy: typeof accuracy === "number" ? accuracy : null,
+          speed: typeof speed === "number" ? speed : null,
+          heading: typeof heading === "number" ? heading : null,
+          battery: typeof battery === "number" ? battery : null,
+          timestamp: Timestamp.fromMillis(incomingMs),
+        },
+      });
+      return { code: 200 };
     });
-    res.json({ success: true });
+    if (result.code !== 200) {
+      return res.status(result.code).json({ success: false, message: result.message });
+    }
+    res.json({ success: true, stale: result.stale === true });
   } catch (error) {
     console.error("[TRACK LOCATION ERROR]", error);
     res.status(500).json({ success: false, message: "Internal server error" });
@@ -339,6 +351,22 @@ app.post("/api/admin/set-claim", verifyToken, requireAdmin, strictLimiter, async
     // out the last superadmin, or self-promotion via a stolen lower token).
     if (targetUid === req.user.uid) {
       return res.status(400).json({ success: false, message: "You cannot change your own role." });
+    }
+
+    // Lateral-demotion guard: canGrantRole only checks the NEW role, so a regular
+    // admin could overwrite a peer admin/superadmin down to 'user' (lockout/DoS on
+    // the admin tier). Read the target's CURRENT role and require superadmin to
+    // modify any account that currently holds an elevated role.
+    let targetCurrentRole;
+    try {
+      const targetUser = await admin.auth().getUser(targetUid);
+      targetCurrentRole = targetUser.customClaims?.role;
+    } catch (e) {
+      return res.status(404).json({ success: false, message: "Target user not found." });
+    }
+    if (!canModifyTarget(req.user.role, targetCurrentRole)) {
+      console.warn(`[SECURITY] ${req.user.email} (role=${req.user.role}) attempted to modify elevated account ${targetUid} (role=${targetCurrentRole})`);
+      return res.status(403).json({ success: false, message: "Only a superadmin can modify an admin or superadmin account." });
     }
 
     // Only admin/superadmin carry the broad `admin` claim. Moderators do not.

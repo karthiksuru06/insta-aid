@@ -28,7 +28,7 @@ import { useTheme } from "../../components/ThemeContext";
 import { auth, db } from "../../firebaseConfig";
 import SOSCountdownModal from "../../components/SOSCountdownModal";
 import { getUserData, saveAlert } from "../../services/firebaseServices";
-import { createTrackingSession, registerRelaySecret, trackingUrl, updateTrackingLocation } from "../../services/trackingService";
+import { createTrackingSession, generateTrackingToken, registerRelaySecret, trackingUrl, updateTrackingLocation } from "../../services/trackingService";
 import { setActiveRelaySecret, startSosTracking } from "../../services/sosTrackingTask";
 import * as Battery from "expo-battery";
 
@@ -147,27 +147,50 @@ export default function ContactsScreen() {
   async function onShakeDetected() {
     if (sosSendingRef.current) return;
     sosSendingRef.current = true;
-    lastSosAtRef.current = Date.now();
     try {
-      if (!user) return;
+      if (!user) {
+        Alert.alert(t('alerts.error'), t('alerts.pleaseSignIn', 'Please sign in to send an SOS.'));
+        return;
+      }
       const contactPhones = contacts.map(c => c.phone).filter((p): p is string => !!p);
-      if (contactPhones.length === 0) return;
+      if (contactPhones.length === 0) {
+        Alert.alert(t('alerts.noContacts'), t('alerts.addEmergencyContacts'));
+        return;
+      }
       let coordsLink = "location unavailable";
       let trackingToken: string | null = null;
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === "granted") {
-        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
-        coordsLink = `https://maps.google.com/?q=${pos.coords.latitude},${pos.coords.longitude}`;
 
-        // Upgrade to a secure live-tracking link + start continuous tracking.
+      // Acquire location WITHOUT blocking the alarm: last-known first, then race a
+      // fresh fix against a short timeout. Location is optional; the SMS always goes out.
+      let coords: Location.LocationObjectCoords | null = null;
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === "granted") {
+          const last = await Location.getLastKnownPositionAsync();
+          const fresh = (await Promise.race([
+            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+            new Promise<null>((res) => setTimeout(() => res(null), 4000)),
+          ])) as Location.LocationObject | null;
+          coords = fresh?.coords ?? last?.coords ?? null;
+        }
+      } catch (e) {
+        console.warn("Location acquisition failed; sending SMS without coords", e);
+      }
+
+      if (coords) {
+        const fixed = coords;
+        coordsLink = `https://maps.google.com/?q=${fixed.latitude},${fixed.longitude}`;
+
+        // Upgrade to a secure live-tracking link. Generate the token locally
+        // (instant) so the SMS isn't blocked on the Firestore session write.
         try {
-          trackingToken = await createTrackingSession({ userId: user.uid, displayName: user.displayName ?? null });
+          trackingToken = await generateTrackingToken();
           coordsLink = trackingUrl(trackingToken);
           const tk = trackingToken;
-          const fixed = pos.coords;
           // Non-blocking — never delay the emergency SMS on backend/permission latency.
           void (async () => {
             try {
+              await createTrackingSession({ userId: user.uid, displayName: user.displayName ?? null, token: tk });
               let battery: number | null = null;
               try { battery = await Battery.getBatteryLevelAsync(); } catch {}
               await updateTrackingLocation(tk, {
@@ -186,9 +209,12 @@ export default function ContactsScreen() {
             }
           })();
         } catch (e) {
-          console.warn("Tracking session setup failed; sending static link", e);
+          console.warn("Tracking token setup failed; sending static link", e);
         }
       }
+
+      // Arm the 15s cooldown only now that we're actually attempting a send.
+      lastSosAtRef.current = Date.now();
       try {
         const BackgroundShake = require('../../modules/background-shake').default;
         const { PermissionsAndroid, Platform: RNPlatform } = require('react-native');

@@ -19,8 +19,8 @@ import NotificationButton from '../../components/NotificationButton';
 import { useTheme } from '../../components/ThemeContext';
 import { auth, db } from '../../firebaseConfig';
 import { usePermissions } from '../../hooks/usePermissions';
-import { createTrackingSession, registerRelaySecret, trackingUrl, updateTrackingLocation } from '../../services/trackingService';
-import { setActiveRelaySecret, startSosTracking } from '../../services/sosTrackingTask';
+import { createTrackingSession, generateTrackingToken, registerRelaySecret, trackingUrl, updateTrackingLocation } from '../../services/trackingService';
+import { endSosTracking, hasActiveSosSession, setActiveRelaySecret, startSosTracking } from '../../services/sosTrackingTask';
 
 // Shake detection constants
 const SHAKE_THRESHOLD = 2.0;
@@ -302,10 +302,12 @@ export default function HomeScreen() {
     const sendEmergencySMS = async (): Promise<void> => {
         if (sosSendingRef.current) return;
         sosSendingRef.current = true;
-        lastSosAtRef.current = Date.now();
         try {
             const currentUser = auth.currentUser;
-            if (!currentUser) return;
+            if (!currentUser) {
+                Alert.alert(t('alerts.error'), t('alerts.pleaseSignIn', 'Please sign in to send an SOS.'));
+                return;
+            }
 
             const contacts = await getEmergencyContacts(currentUser.uid);
 
@@ -314,48 +316,77 @@ export default function HomeScreen() {
                 return;
             }
 
-            const { status } = await Location.getForegroundPermissionsAsync();
-            if (status !== 'granted') {
-                Alert.alert(t('alerts.permissionError'), t('alerts.locationPermissionRequired'));
-                return;
-            }
-
-            const { coords } = await Location.getCurrentPositionAsync({});
-
-            // Share a SECURE LIVE-TRACKING link (continuous), not a static pin.
-            // Fall back to a static maps link if session setup fails.
-            let locationUrl = `https://maps.google.com/?q=${coords.latitude},${coords.longitude}`;
+            // Acquire location WITHOUT ever blocking the alarm. Location is optional:
+            // a denied permission or a slow/never-returning GPS fix must NOT stop the
+            // SMS. Try last-known first, then race a fresh fix against a short timeout.
+            let coords: Location.LocationObjectCoords | null = null;
             try {
-                const trackingToken = await createTrackingSession({
-                    userId: currentUser.uid,
-                    displayName: currentUser.displayName ?? null,
-                });
-                locationUrl = trackingUrl(trackingToken);
-                // Best-effort and explicitly NON-BLOCKING — a slow/cold backend or a
-                // permission dialog must never delay the emergency SMS below.
-                void (async () => {
-                    try {
-                        let battery: number | null = null;
-                        try { battery = await Battery.getBatteryLevelAsync(); } catch {}
-                        await updateTrackingLocation(trackingToken, {
-                            latitude: coords.latitude,
-                            longitude: coords.longitude,
-                            accuracy: coords.accuracy ?? null,
-                            speed: coords.speed ?? null,
-                            heading: coords.heading ?? null,
-                            battery,
-                        }, Date.now());
-                        await startSosTracking(trackingToken);
-                        const relaySecret = await registerRelaySecret(trackingToken);
-                        if (relaySecret) await setActiveRelaySecret(relaySecret);
-                    } catch (e) {
-                        console.warn('Tracking setup (background) failed', e);
-                    }
-                })();
+                const { status } = await Location.getForegroundPermissionsAsync();
+                if (status === 'granted') {
+                    const last = await Location.getLastKnownPositionAsync();
+                    const fresh = (await Promise.race([
+                        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+                        new Promise<null>((res) => setTimeout(() => res(null), 4000)),
+                    ])) as Location.LocationObject | null;
+                    coords = fresh?.coords ?? last?.coords ?? null;
+                }
             } catch (e) {
-                console.warn('Tracking session setup failed; sending static link', e);
+                console.warn('Location acquisition failed; sending SMS without coords', e);
             }
-            const message = `🚨 EMERGENCY! I need help! Track me live: ${locationUrl}`;
+
+            // Build the share link. With coords, set up a SECURE LIVE-TRACKING link;
+            // the token is generated locally (instant) so the SMS carries the live
+            // link without waiting on Firestore. Without coords, send a clear
+            // "location unavailable" message — the alarm still goes out.
+            let locationUrl = 'location unavailable';
+            let liveTracking = false;
+            if (coords) {
+                const fix = coords;
+                locationUrl = `https://maps.google.com/?q=${fix.latitude},${fix.longitude}`;
+                try {
+                    const trackingToken = await generateTrackingToken();
+                    locationUrl = trackingUrl(trackingToken);
+                    liveTracking = true;
+                    // Fully NON-BLOCKING: the Firestore session write, relay setup and
+                    // continuous tracking happen AFTER the SMS is dispatched, so a
+                    // slow/cold backend never delays the emergency message.
+                    void (async () => {
+                        try {
+                            await createTrackingSession({
+                                userId: currentUser.uid,
+                                displayName: currentUser.displayName ?? null,
+                                token: trackingToken,
+                            });
+                            let battery: number | null = null;
+                            try { battery = await Battery.getBatteryLevelAsync(); } catch {}
+                            await updateTrackingLocation(trackingToken, {
+                                latitude: fix.latitude,
+                                longitude: fix.longitude,
+                                accuracy: fix.accuracy ?? null,
+                                speed: fix.speed ?? null,
+                                heading: fix.heading ?? null,
+                                battery,
+                            }, Date.now());
+                            await startSosTracking(trackingToken);
+                            const relaySecret = await registerRelaySecret(trackingToken);
+                            if (relaySecret) await setActiveRelaySecret(relaySecret);
+                            setSosActive(true);
+                        } catch (e) {
+                            console.warn('Tracking setup (background) failed', e);
+                        }
+                    })();
+                } catch (e) {
+                    console.warn('Tracking token setup failed; sending static link', e);
+                }
+            }
+
+            const message = liveTracking
+                ? `🚨 EMERGENCY! I need help! Track me live: ${locationUrl}`
+                : `🚨 EMERGENCY! I need help! My location: ${locationUrl}`;
+
+            // Arm the 15s cooldown only now that we're actually attempting a send —
+            // a failed/aborted attempt above must not block an immediate retry.
+            lastSosAtRef.current = Date.now();
 
             try {
                 const BackgroundShake = require('../../modules/background-shake').default;
@@ -371,8 +402,13 @@ export default function HomeScreen() {
 
                 const sent = await BackgroundShake.sendSMS(contacts.join(','), message);
                 if (sent) {
-                    Alert.alert(t('alerts.emergencyAlert'), t('alerts.locationShared'));
-                    await logAlert('emergency_share', { coords, contacts });
+                    Alert.alert(
+                        t('alerts.emergencyAlert'),
+                        liveTracking
+                            ? t('alerts.locationShared')
+                            : t('alerts.emergencySentNoLocation', 'Emergency alert sent (location unavailable).')
+                    );
+                    await logAlert('emergency_share', { coords, contacts, liveTracking });
                 } else {
                     throw new Error('Native SMS send failed');
                 }
@@ -389,6 +425,38 @@ export default function HomeScreen() {
         } finally {
             sosSendingRef.current = false;
         }
+    };
+
+    // ── End-SOS / stop-sharing ────────────────────────────────────────────────
+    // Without this, a session stays ACTIVE and the public /track link keeps
+    // exposing live location until its 6h TTL. Reflect any session already active
+    // on mount (e.g. after an app restart while sharing).
+    const [sosActive, setSosActive] = useState(false);
+    useEffect(() => {
+        hasActiveSosSession().then(setSosActive).catch(() => {});
+    }, []);
+
+    const handleEndSos = () => {
+        Alert.alert(
+            t('alerts.endSosTitle', 'Stop sharing location?'),
+            t('alerts.endSosBody', 'This ends live location sharing with your emergency contacts.'),
+            [
+                { text: t('alerts.cancel', 'Cancel'), style: 'cancel' },
+                {
+                    text: t('alerts.endSosConfirm', 'Stop sharing'),
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await endSosTracking();
+                        } catch (e) {
+                            console.warn('Failed to end SOS session', e);
+                        } finally {
+                            setSosActive(false);
+                        }
+                    },
+                },
+            ]
+        );
     };
 
     // ✅ Updated Fake Call logic
@@ -417,6 +485,28 @@ export default function HomeScreen() {
                 onComplete={() => { setSosCountdownVisible(false); sendEmergencySMS(); }}
                 onCancel={() => setSosCountdownVisible(false)}
             />
+            {/* Live-sharing banner — lets the user stop sharing instead of leaving
+                the session ACTIVE (and the public link readable) until its TTL. */}
+            {sosActive && (
+                <TouchableOpacity
+                    onPress={handleEndSos}
+                    activeOpacity={0.85}
+                    style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: '#ED4B4B',
+                        paddingVertical: 10,
+                        paddingHorizontal: 16,
+                        marginTop: insets.top,
+                    }}
+                >
+                    <MaterialIcons name="location-off" size={18} color="#fff" />
+                    <Text style={{ color: '#fff', fontWeight: '700', marginLeft: 8 }}>
+                        {t('alerts.endSosBanner', 'Live location sharing is ON — tap to stop')}
+                    </Text>
+                </TouchableOpacity>
+            )}
             {/* Header */}
             <View style={[styles.headerBg, { backgroundColor: theme === "dark" ? "#111" : "#fff", paddingTop: insets.top, height: 75 + insets.top }]}>
                 <View style={[styles.headerRow, { paddingBottom: 6 }]}>
