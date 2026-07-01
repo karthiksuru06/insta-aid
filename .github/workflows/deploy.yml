@@ -1,0 +1,92 @@
+name: Deploy
+
+# Automates the previously-manual deploys. Each job is gated on its secret(s),
+# so this is a safe no-op until you add them in:
+#   GitHub repo → Settings → Secrets and variables → Actions
+#
+# Required secrets:
+#   FIREBASE_SERVICE_ACCOUNT  - stringified service-account JSON
+#   FIREBASE_PROJECT_ID       - e.g. instaaid-43394
+#   EXPO_TOKEN                - Expo access token (EAS build)
+#   RENDER_DEPLOY_HOOK_URL    - (optional) Render deploy hook URL
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  deploy-firebase:
+    name: Deploy Firebase (rules, indexes, functions)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Guard — require Firebase secrets
+        id: guard
+        run: |
+          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ] || [ -z "${{ secrets.FIREBASE_PROJECT_ID }}" ]; then
+            echo "Firebase secrets not set — skipping deploy."; echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install functions deps & build
+        if: steps.guard.outputs.ok == 'true'
+        run: cd functions && npm install && npm run build --if-present
+      - name: Write service account
+        if: steps.guard.outputs.ok == 'true'
+        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > "$RUNNER_TEMP/sa.json"
+      - name: Deploy
+        if: steps.guard.outputs.ok == 'true'
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          npm i -g firebase-tools
+          firebase deploy \
+            --only firestore:rules,firestore:indexes,storage,functions \
+            --project "${{ secrets.FIREBASE_PROJECT_ID }}" \
+            --non-interactive
+
+  build-mobile:
+    name: EAS production build (Android)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guard — require Expo token
+        id: guard
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "EXPO_TOKEN not set — skipping EAS build."; echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@v4
+        if: steps.guard.outputs.ok == 'true'
+        with:
+          node-version: 20
+          cache: npm
+      - uses: expo/expo-github-action@c7b66a9c327a43a8fa7c0158e7f30d6040d2481e # v8
+        if: steps.guard.outputs.ok == 'true'
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Install dependencies
+        if: steps.guard.outputs.ok == 'true'
+        run: npm ci || npm install
+      - name: EAS build
+        if: steps.guard.outputs.ok == 'true'
+        run: eas build --non-interactive --platform android --profile production
+
+  notify-render:
+    name: Trigger Render deploy (optional)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render deploy hook
+        run: |
+          if [ -n "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" ]; then
+            curl -fsSL -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" && echo "Render deploy triggered."
+          else
+            echo "RENDER_DEPLOY_HOOK_URL not set — Render auto-deploys on push, nothing to do."
+          fi

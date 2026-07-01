@@ -1,0 +1,38 @@
+name: Keep Render Backend Warm
+
+# Render's free tier spins the instance down after ~15 min of inactivity, so the
+# first request after idle can take 30s+ while it cold-starts. For an emergency
+# SOS app that delay is unacceptable during a live demo. This workflow pings the
+# public /health endpoint every 10 minutes to keep the dyno awake.
+#
+# NOTE: GitHub Actions cron is best-effort and can be delayed 5-15 min under load,
+# and scheduled workflows are auto-disabled after 60 days of repo inactivity.
+# For guaranteed warmth during demos, ALSO set up an external pinger
+# (e.g. UptimeRobot, 5-min interval) on the same URL. See PRODUCTION_READINESS.md.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *" # every 10 minutes (UTC)
+  workflow_dispatch: # allow manual "wake it up now" runs
+
+jobs:
+  ping:
+    name: Ping /health
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake the backend
+        run: |
+          URL="https://instaaid-backend-47wd.onrender.com/health"
+          echo "Pinging $URL ..."
+          # Retry to cover the cold-start: up to 5 tries, 40s timeout each.
+          for i in 1 2 3 4 5; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 40 "$URL" || echo "000")
+            echo "Attempt $i -> HTTP $CODE"
+            if [ "$CODE" = "200" ]; then
+              echo "Backend is awake."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Backend did not return 200 after retries." >&2
+          exit 1
