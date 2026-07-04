@@ -16,7 +16,15 @@ export default {
   expo: {
     name: "Instaaid",
     slug: "Instaaid",
-    version: "1.0.3",
+    version: "1.0.4",
+    runtimeVersion: {
+      policy: "appVersion"
+    },
+    updates: {
+      url: "https://u.expo.dev/9237c496-ac25-4259-95f1-a46aab754636",
+      fallbackToCacheTimeout: 0,
+      checkAutomatically: "ON_LOAD"
+    },
     platforms: [
       "android",
       "ios",
@@ -43,7 +51,7 @@ export default {
     },
     android: {
       package: "com.instaaid.app",
-      versionCode: 4,
+      versionCode: 5,
       googleServicesFile: "./google-services.json",
       adaptiveIcon: {
         foregroundImage: "./assets/images/image.png",
