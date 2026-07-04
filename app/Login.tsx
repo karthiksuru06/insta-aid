@@ -117,11 +117,25 @@ const Login: React.FC = () => {
       const permissionsCompleted = await AsyncStorage.getItem(`permissions_completed_${userEmail}`);
       const safetyCompleted = await AsyncStorage.getItem(`safety_completed_${userEmail}`);
 
-      // Check if the user is in the admins collection
-      const adminRef = doc(db, 'admins', userEmail);
-      const adminSnap = await getDoc(adminRef);
+      // Check if the user is in the admins collection.
+      // Admin docs are keyed by UID (see scripts/setAdmin.mjs and firestore.rules),
+      // NOT by email. firestore.rules also only lets an admin read the admins
+      // collection, so a non-admin's read throws permission-denied — we treat any
+      // failure/absence as "not an admin" and fall through to the normal routing
+      // instead of letting it bubble to the outer catch (which would skip the
+      // first-login onboarding flow).
+      let isAdminUser = false;
+      const uid = auth.currentUser?.uid;
+      if (uid) {
+        try {
+          const adminSnap = await getDoc(doc(db, 'admins', uid));
+          isAdminUser = adminSnap.exists();
+        } catch {
+          isAdminUser = false; // permission-denied for non-admins is expected
+        }
+      }
 
-      if (adminSnap.exists()) {
+      if (isAdminUser) {
         // ✅ ADMIN — membership of the admins collection only; no hard-coded email.
         router.replace('../(tabs)/Admindashboard');
       } else if (firstLoginFlag && safetyCompleted) {
@@ -167,18 +181,14 @@ const Login: React.FC = () => {
 
       const firebaseServices = await import('../services/firebaseServices');
       try {
-        await firebaseServices.updateUserStatus(uid, 'Active');
-        console.log(`✅ [LOGIN] Status update completed for ${uid}`);
-
-        // Add a small delay to ensure Firestore replication
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        // Verify the update was successful by reading back
+        // Read user data to verify status
         const userData = await firebaseServices.getUserData(uid);
-        console.log(`📋 [LOGIN VERIFY] User ${uid} status is now: ${userData?.status}`);
+        console.log(`📋 [LOGIN VERIFY] User ${uid} status is: ${userData?.status}`);
 
         if (userData?.status !== 'Active') {
-          console.warn(`⚠️ [LOGIN] Status update may not have worked. Expected: Active, Got: ${userData?.status}`);
+          console.warn(`⚠️ [LOGIN] User is not Active. Status is: ${userData?.status}`);
+          // You could potentially block login here if you only want Active users to login
+          // But for now, we just skip the unauthorized update attempt.
         }
 
         // ✅ User verified - proceed with login
@@ -236,12 +246,12 @@ const Login: React.FC = () => {
           });
         }
 
-        // Activate + refresh profile fields on every login (doc now exists, so
+        // Refresh profile fields on every login (doc now exists, so
         // this is an allowed update rather than a create).
+        // We omit 'status' to comply with the firestore.rules lockdown.
         await firebaseServices.saveUserData(uid, {
           email: result.user.email,
           displayName: result.user.displayName || '',
-          status: 'Active',
         });
 
         await new Promise(resolve => setTimeout(resolve, 500));

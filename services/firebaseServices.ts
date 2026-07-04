@@ -211,7 +211,6 @@ export const updateUserStatus = async (userId: string, status: string) => {
 export const updateUserHeartbeat = async (userId: string) => {
   try {
     await updateDoc(doc(db, "users", userId), {
-      status: "Active",
       lastSeen: Timestamp.now(),
     });
   } catch (error) {

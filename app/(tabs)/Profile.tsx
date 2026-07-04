@@ -70,11 +70,10 @@ export default function ProfileScreen() {
         text: t('signOut'),
         style: 'destructive',
         onPress: async () => {
-          if (auth.currentUser) {
-            await import('../../services/firebaseServices').then(async (m) => {
-              await m.updateUserStatus(auth.currentUser!.uid, 'Inactive'); // Set Inactive
-            }).catch(err => console.log("Logout Log Error", err));
-          }
+          // Note: we intentionally do NOT write status:'Inactive' here. Per
+          // firestore.rules, status is admin-controlled and a normal user changing
+          // their own status is rejected (permission-denied). Presence is derived
+          // from `lastSeen` staleness (updated by the heartbeat) instead.
           const { googleSignOut } = await import('../../services/googleAuthHelper');
           await googleSignOut();
           await signOut(auth);
